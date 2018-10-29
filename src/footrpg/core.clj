@@ -2,12 +2,16 @@
   (:require [footrpg.ascii :as ascii])
   (:gen-class))
 
-(defn make-game-state []
-  {:teams {:home nil
-           :away nil}
+(defn make-game []
+  {:players []
+   :teams {:home nil :away nil}
    :ball nil
    :score {:home 0
            :away 0}})
+
+(defn make-team []
+  {:lineup []
+   :name ""})
 
 (defn make-pitch []
   {:width 58
@@ -36,14 +40,14 @@
 
 (defn make-ball []
   {:kind :ball
-   :location (make-location)})
+   :loc (make-location)})
 
 (defn make-player []
   {:kind :player
    :team nil
    :number nil
    :name nil
-   :location (make-location)}
+   :loc (make-location)}
   )
 
 (defn add-vect [location [dx dy]]
@@ -53,7 +57,7 @@
       (update-in [:loc 1] + dy)))
 
 (defn move [thing vect]
-  (update thing :location add-vect vect))
+  (update thing :loc add-vect vect))
 
 ;; This is now meta-game
 
@@ -93,11 +97,64 @@
 
 (def state (make-state))
 
+;; Location utils
+(def formations
+     {:433 {:gk [0. 0.5]
+            :left-back [0.34 0.15]
+            :left-cb [0.34 0.38]
+            :right-cb [0.34 0.62]
+            :right-back [0.34 0.85]
+            :left-mid [0.57 0.25]
+            :center-mid [0.57 0.5]
+            :right-mid [0.57 0.75]
+            :left-wing [0.8 0.25]
+            :striker [0.8 0.5]
+            :right-wing [0.8 0.75]}})
+
+(defn home-loc [[x y] pitch]
+  [(-> x (* (/ (:width pitch) 2)) int)
+   (-> y (* (:height pitch)) int)])
+
+(defn away-loc [[x y] pitch]
+  [(- (dec (:width pitch)) (-> x (* (/ (:width pitch) 2)) int))
+   (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
+
+(defn init-game [pitch]
+  (let [home (fn [number name* position] (assoc (make-player) :team :home :number number :name name* :loc {:vert nil :loc (-> formations :433 position (home-loc pitch))}))
+        away (fn [number name* position] (assoc (make-player) :team :away :number number :name name* :loc {:vert nil :loc (-> formations :433 position (away-loc pitch))}))]
+    (-> (make-game)
+        (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
+                       :away {:name :barcelona :color {:bg :red :fg :white}}})
+        (assoc :players
+               [(home 25 "Courtois" :gk)
+                (home 12 "Marcelo" :left-back)
+                (home 4 "Ramos" :left-cb)
+                (home 5 "Varane" :right-cb)
+                (home 6 "Nacho" :right-back) ;; lol
+                (home 8 "Kroos" :left-mid)
+                (home 14 "Casemiro" :center-mid)
+                (home 10 "Modric" :right-mid)
+                (home 22 "Isco" :left-wing)
+                (home 9 "Benzema" :striker)
+                (home 11 "Bale" :right-wing)
+                (away 1 "Ter Stegen" :gk)
+                (away 20 "Roberto" :right-back)
+                (away 3 "Pique" :right-cb)
+                (away 15 "Lenglet" :left-cb)
+                (away 18 "Alba" :left-back)
+                (away 4 "Rakitic" :right-mid)
+                (away 5 "Busquets" :center-mid)
+                (away 8 "Arthur" :left-mid)
+                (away 12 "Rafinha" :right-wing)
+                (away 9 "Suarez" :striker)
+                (away 7 "Coutinho" :left-wing)]))))
+
 (defn init []
   (let [pitch (make-pitch)]
     (def state (-> state
                    (assoc :pitch pitch)
                    (assoc :mode main-mode)
+                   (assoc :game (init-game pitch))
                    (assoc :cursor (pitch-center pitch))))))
 
 (defn main-loop []

@@ -14,14 +14,23 @@
   (s/get-key screen)
   (s/redraw screen))
 
-(defn transpose-cursor [[x y] pitch]
+(defn transpose-loc [[x y] pitch]
   [(-> x (* 2) inc)
    (inc y)])
+
+(defn player-glyph [player]
+  (let [[num-first num-second] (str (:number player))]
+    (str num-first (or num-second " "))))
 
 (defn redraw [state]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
-  (let [[curs-x curs-y] (transpose-cursor (:cursor state) (:pitch state))]
+  (doseq [player (-> state :game :players)]
+    (let [color (get-in state [:game :teams (:team player) :color])
+          glyph (player-glyph player)
+          [x y] (transpose-loc (-> player :loc :loc) (:pitch state))]
+      (s/put-string screen x y (str glyph) color)))
+  (let [[curs-x curs-y] (transpose-loc (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
   (s/redraw screen))
 
