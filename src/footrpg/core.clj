@@ -48,7 +48,7 @@
    :tile []})
 
 (defn add-vect [[x y] [dx dy]]
-  [(+ x dx) [+ y dy]])
+  [(+ x dx) (+ y dy)])
 
 (defn move [thing vect]
   (-> thing
