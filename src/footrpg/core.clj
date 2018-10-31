@@ -18,8 +18,8 @@
    :height 37})
 
 (defn pitch-center [p]
-  [(-> (:width p) (/ 2))
-   (-> (:height p) (/ 2))])
+  [(-> (:width p) (quot 2))
+   (-> (:height p) (quot 2))])
 
 (defn pitch-top-right [p]
   [(dec (:width p)) 0])
@@ -111,11 +111,11 @@
             :right-wing [0.8 0.75]}})
 
 (defn home-tile [[x y] pitch]
-  [(-> x (* (/ (:width pitch) 2)) int)
+  [(-> x (* (quot (:width pitch) 2)) int)
    (-> y (* (:height pitch)) int)])
 
 (defn away-tile [[x y] pitch]
-  [(- (dec (:width pitch)) (-> x (* (/ (:width pitch) 2)) int))
+  [(- (dec (:width pitch)) (-> x (* (quot (:width pitch) 2)) int))
    (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
 
 (defn init-game [pitch]
