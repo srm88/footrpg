@@ -22,14 +22,20 @@
   (let [[num-first num-second] (str (:number player))]
     (str num-first (or num-second " "))))
 
+(defn put-pitch [pitch loc & args]
+  (let [[x y] (transpose-loc loc pitch)]
+    (apply s/put-string screen x y args)))
+
+(defn draw-player [state player]
+  (let [color (get-in state [:game :teams (:team player) :color])
+        glyph (player-glyph player)]
+    (put-pitch (:pitch state) (:loc player) (str glyph) color)))
+
 (defn redraw [state]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
   (doseq [player (-> state :game :players)]
-    (let [color (get-in state [:game :teams (:team player) :color])
-          glyph (player-glyph player)
-          [x y] (transpose-loc (-> player :loc :loc) (:pitch state))]
-      (s/put-string screen x y (str glyph) color)))
+    (draw-player state player))
   (let [[curs-x curs-y] (transpose-loc (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
   (s/redraw screen))

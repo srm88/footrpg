@@ -34,30 +34,26 @@
 (defn pitch-bottom-left [p]
   [0 (dec (:height p))])
 
-(defn make-location []
-  {:vect nil
-   :loc []})
-
 (defn make-ball []
   {:kind :ball
-   :loc (make-location)})
+   :vect nil
+   :loc []})
 
 (defn make-player []
   {:kind :player
    :team nil
    :number nil
    :name nil
-   :loc (make-location)}
-  )
+   :vect nil
+   :loc []})
 
-(defn add-vect [location [dx dy]]
-  (-> location
-      (assoc :vect [dx dy])
-      (update-in [:loc 0] + dx)
-      (update-in [:loc 1] + dy)))
+(defn add-vect [[x y] [dx dy]]
+  [(+ x dx) [+ y dy]])
 
 (defn move [thing vect]
-  (update thing :loc add-vect vect))
+  (-> thing
+      (update :vect vect)
+      (update :loc add-vect vect)))
 
 ;; This is now meta-game
 
@@ -120,8 +116,14 @@
    (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
 
 (defn init-game [pitch]
-  (let [home (fn [number name* position] (assoc (make-player) :team :home :number number :name name* :loc {:vert nil :loc (-> formations :433 position (home-loc pitch))}))
-        away (fn [number name* position] (assoc (make-player) :team :away :number number :name name* :loc {:vert nil :loc (-> formations :433 position (away-loc pitch))}))]
+  (let [home (fn [number name* position] (assoc (make-player) :team :home
+                                                              :number number
+                                                              :name name*
+                                                              :loc (-> formations :433 position (home-loc pitch))))
+        away (fn [number name* position] (assoc (make-player) :team :away
+                                                              :number number
+                                                              :name name*
+                                                              :loc (-> formations :433 position (away-loc pitch))))]
     (-> (make-game)
         (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
                        :away {:name :barcelona :color {:bg :red :fg :white}}})
