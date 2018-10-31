@@ -61,32 +61,35 @@
   [(-> x (max 0) (min (dec (:width pitch))))
    (-> y (max 0) (min (dec (:height pitch))))])
 
-(defn cursor-left [s]
+(defn pitch-left [s]
   (-> s
     (update-in [:cursor 0] dec)
     (update :cursor bounded (:pitch s))))
 
-(defn cursor-right [s]
+(defn pitch-right [s]
   (-> s
     (update-in [:cursor 0] inc)
     (update :cursor bounded (:pitch s))))
 
-(defn cursor-up [s]
+(defn pitch-up [s]
   (-> s
     (update-in [:cursor 1] dec)
     (update :cursor bounded (:pitch s))))
 
-(defn cursor-down [s]
+(defn pitch-down [s]
   (-> s
     (update-in [:cursor 1] inc)
     (update :cursor bounded (:pitch s))))
 
-(def main-mode {:left cursor-left
-                :right cursor-right
-                :up cursor-up
-                :down cursor-down
-                :escape (constantly :exit)
-                \q (constantly :exit)})
+(def pitch-mode-handlers {:left pitch-left
+                          :right pitch-right
+                          :up pitch-up
+                          :down pitch-down
+                          :escape (constantly :exit)
+                          \q (constantly :exit)})
+
+(defn make-pitch-mode []
+  {:handlers pitch-mode-handlers})
 
 (defn make-state []
   {:cursor [0 0]})
@@ -155,16 +158,15 @@
   (let [pitch (make-pitch)]
     (def state (-> state
                    (assoc :pitch pitch)
-                   (assoc :mode main-mode)
+                   (assoc :mode (make-pitch-mode))
                    (assoc :game (init-game pitch))
                    (assoc :cursor (pitch-center pitch))))))
 
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
-    (let [c (ascii/input)
-          f ((:mode s) c)
-          s2 (if (nil? f) s (apply f [s]))]
+    (let [handler ((-> s :mode :handlers) (ascii/input))
+          s2 (if (nil? handler) s (apply handler [s]))]
       (if (= :exit s2)
         nil
         (recur s2)))))
