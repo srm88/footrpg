@@ -1,5 +1,6 @@
 (ns footrpg.core
-  (:require [footrpg.ascii :as ascii])
+  (:require [footrpg.ascii :as ascii]
+            [footrpg.util :refer [debug-log]])
   (:gen-class))
 
 (defn make-game []
@@ -55,41 +56,95 @@
       (update :vect vect)
       (update :tile add-vect vect)))
 
-;; This is now meta-game
+(defn at-tile [s tile]
+  (->> s :game :players (filter #(= tile (:tile %))) first))
+
+(def up [0 -1])
+(def down [0 1])
+(def left [-1 0])
+(def right [1 0])
+
+(defn in-bounds? [[x y] pitch]
+  (and (>= x 0) (< x (dec (:width pitch)))
+       (>= y 0) (< y (dec (:height pitch)))))
 
 (defn bounded [[x y] pitch]
   [(-> x (max 0) (min (dec (:width pitch))))
    (-> y (max 0) (min (dec (:height pitch))))])
 
-(defn pitch-left [s]
+
+(defn adjacent [tile pitch]
+  (->> [up down left right]
+       (map #(add-vect tile %))
+       (filter #(in-bounds? % pitch))))
+
+(def in-range (memoize (fn
+  ([tile steps pitch] (in-range tile steps [] pitch))
+  ([tile steps seen pitch]
+    (if (or (< steps 0) (contains? seen tile) (not (in-bounds? tile pitch)))
+      nil
+      (let [seen* (conj seen tile)]
+        (->> (concat seen*
+                     (in-range (add-vect tile up) (dec steps) seen* pitch)
+                     (in-range (add-vect tile down) (dec steps) seen* pitch)
+                     (in-range (add-vect tile left) (dec steps) seen* pitch)
+                     (in-range (add-vect tile right) (dec steps) seen* pitch))
+             set
+             (into []))))))))
+
+;; This is now meta-game
+
+(defn pitch-cursor-left [s]
   (-> s
     (update-in [:cursor 0] dec)
     (update :cursor bounded (:pitch s))))
 
-(defn pitch-right [s]
+(defn pitch-cursor-right [s]
   (-> s
     (update-in [:cursor 0] inc)
     (update :cursor bounded (:pitch s))))
 
-(defn pitch-up [s]
+(defn pitch-cursor-up [s]
   (-> s
     (update-in [:cursor 1] dec)
     (update :cursor bounded (:pitch s))))
 
-(defn pitch-down [s]
+(defn pitch-cursor-down [s]
   (-> s
     (update-in [:cursor 1] inc)
     (update :cursor bounded (:pitch s))))
 
-(def pitch-mode-handlers {:left pitch-left
-                          :right pitch-right
-                          :up pitch-up
-                          :down pitch-down
-                          :escape (constantly :exit)
-                          \q (constantly :exit)})
+;; Only returns players for now
 
-(defn make-pitch-mode []
-  {:handlers pitch-mode-handlers})
+(defn pitch-select [s]
+  (if-let [player (at-tile s (:cursor s))]
+    {:into-mode [:player-select player s]}
+    s))
+
+(def player-select-mode-handlers {:left pitch-cursor-left
+                                  :right pitch-cursor-right
+                                  :up pitch-cursor-up
+                                  :down pitch-cursor-down
+                                  :escape (constantly :exit)
+                                  \q (constantly :exit)})
+
+(defn player-select-mode [player s]
+  {:name :player-select
+   :handlers player-select-mode-handlers
+   :player player
+   :selected (in-range (:tile player) 3 (:pitch s))})
+
+(def pitch-mode-handlers {:left pitch-cursor-left
+                          :right pitch-cursor-right
+                          :up pitch-cursor-up
+                          :down pitch-cursor-down
+                          :enter pitch-select
+                          :escape (constantly :hard-exit)
+                          \q (constantly :hard-exit)})
+
+(defn pitch-mode []
+  {:name :pitch
+   :handlers pitch-mode-handlers})
 
 (defn make-state []
   {:cursor [0 0]})
@@ -158,18 +213,28 @@
   (let [pitch (make-pitch)]
     (def state (-> state
                    (assoc :pitch pitch)
-                   (assoc :mode (make-pitch-mode))
+                   (assoc :mode (list (pitch-mode)))
                    (assoc :game (init-game pitch))
                    (assoc :cursor (pitch-center pitch))))))
+
+;; Dispatcher to avoid circular function dependencies
+(def modes {:pitch pitch-mode
+            :player-select player-select-mode})
+
+(defn make-mode [mode & args]
+  (apply (modes mode) args))
 
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
-    (let [handler ((-> s :mode :handlers) (ascii/input))
-          s2 (if (nil? handler) s (apply handler [s]))]
-      (if (= :exit s2)
-        nil
-        (recur s2)))))
+    (debug-log "mode stack: " (into [] (map :name (:mode s))))
+    (let [handler ((-> s :mode peek :handlers) (ascii/input))
+          reply (if (nil? handler) s (apply handler [s]))]
+      (cond
+        (= :hard-exit reply) nil
+        (= :exit reply) (recur (update s :mode pop))
+        (:into-mode reply) (->> (:into-mode reply) (apply make-mode) (update s :mode conj) recur)
+        :else (recur reply)))))
 
 (defn main [ui-type]
   (ascii/init)
