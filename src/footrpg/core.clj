@@ -37,7 +37,7 @@
 (defn make-ball []
   {:kind :ball
    :vect nil
-   :loc []})
+   :tile []})
 
 (defn make-player []
   {:kind :player
@@ -45,7 +45,7 @@
    :number nil
    :name nil
    :vect nil
-   :loc []})
+   :tile []})
 
 (defn add-vect [[x y] [dx dy]]
   [(+ x dx) [+ y dy]])
@@ -53,7 +53,7 @@
 (defn move [thing vect]
   (-> thing
       (update :vect vect)
-      (update :loc add-vect vect)))
+      (update :tile add-vect vect)))
 
 ;; This is now meta-game
 
@@ -110,11 +110,11 @@
             :striker [0.8 0.5]
             :right-wing [0.8 0.75]}})
 
-(defn home-loc [[x y] pitch]
+(defn home-tile [[x y] pitch]
   [(-> x (* (/ (:width pitch) 2)) int)
    (-> y (* (:height pitch)) int)])
 
-(defn away-loc [[x y] pitch]
+(defn away-tile [[x y] pitch]
   [(- (dec (:width pitch)) (-> x (* (/ (:width pitch) 2)) int))
    (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
 
@@ -122,11 +122,11 @@
   (let [home (fn [number name* position] (assoc (make-player) :team :home
                                                               :number number
                                                               :name name*
-                                                              :loc (-> formations :433 position (home-loc pitch))))
+                                                              :tile (-> formations :433 position (home-tile pitch))))
         away (fn [number name* position] (assoc (make-player) :team :away
                                                               :number number
                                                               :name name*
-                                                              :loc (-> formations :433 position (away-loc pitch))))]
+                                                              :tile (-> formations :433 position (away-tile pitch))))]
     (-> (make-game)
         (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
                        :away {:name :barcelona :color {:bg :red :fg :white}}})
