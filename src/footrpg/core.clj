@@ -45,16 +45,30 @@
    :team nil
    :number nil
    :name nil
+   :quick 3
    :vect nil
    :tile []})
 
 (defn add-vect [[x y] [dx dy]]
   [(+ x dx) (+ y dy)])
 
+(defn abs [x]
+  (if (< x 0) (* x -1) x))
+
+(defn magnitude [[x y]]
+  (+ (abs x) (abs y)))
+
+(defn levenshtein [[x y] [x* y*]]
+  (+ (abs (- x x*)) (abs (- y y*))))
+
 (defn move [thing vect]
   (-> thing
       (update :vect vect)
       (update :tile add-vect vect)))
+
+;; TODO: 0 ending momentum if you move less than max
+(defn can-reach? [player tile]
+  (>= (:quick player) (levenshtein (:tile player) tile)))
 
 (defn at-tile [s tile]
   (->> s :game :players (filter #(= tile (:tile %))) first))
@@ -78,19 +92,20 @@
        (map #(add-vect tile %))
        (filter #(in-bounds? % pitch))))
 
-(def in-range (memoize (fn
-  ([tile steps pitch] (in-range tile steps [] pitch))
-  ([tile steps seen pitch]
-    (if (or (< steps 0) (contains? seen tile) (not (in-bounds? tile pitch)))
-      nil
-      (let [seen* (conj seen tile)]
-        (->> (concat seen*
-                     (in-range (add-vect tile up) (dec steps) seen* pitch)
-                     (in-range (add-vect tile down) (dec steps) seen* pitch)
-                     (in-range (add-vect tile left) (dec steps) seen* pitch)
-                     (in-range (add-vect tile right) (dec steps) seen* pitch))
-             set
-             (into []))))))))
+(defn player-range
+  ([player pitch] (player-range player pitch #{} (list (:tile player))))
+  ([player pitch seen tiles]
+    (if (empty? tiles)
+      (vec seen)
+      (let [tile (first tiles)
+            tiles* (pop tiles)]
+        (if (or (contains? seen tile) (not (in-bounds? tile pitch)) (not (can-reach? player tile)))
+          (recur player pitch seen tiles*)
+          (recur player pitch (conj seen tile)
+                 (conj tiles* (add-vect tile up)
+                              (add-vect tile down)
+                              (add-vect tile left)
+                              (add-vect tile right))))))))
 
 ;; This is now meta-game
 
@@ -132,7 +147,7 @@
   {:name :player-select
    :handlers player-select-mode-handlers
    :player player
-   :selected (in-range (:tile player) 3 (:pitch s))})
+   :selected (player-range player (:pitch s))})
 
 (def pitch-mode-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
@@ -174,14 +189,14 @@
    (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
 
 (defn init-game [pitch]
-  (let [home (fn [number name* position] (assoc (make-player) :team :home
+  (let [home (fn [number name* position & args] (apply assoc (make-player) :team :home
                                                               :number number
                                                               :name name*
-                                                              :tile (-> formations :433 position (home-tile pitch))))
-        away (fn [number name* position] (assoc (make-player) :team :away
+                                                              :tile (-> formations :433 position (home-tile pitch)) args))
+        away (fn [number name* position & args] (apply assoc (make-player) :team :away
                                                               :number number
                                                               :name name*
-                                                              :tile (-> formations :433 position (away-tile pitch))))]
+                                                              :tile (-> formations :433 position (away-tile pitch)) args))]
     (-> (make-game)
         (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
                        :away {:name :barcelona :color {:bg :red :fg :white}}})
@@ -193,21 +208,21 @@
                 (home 6 "Nacho" :right-back) ;; lol
                 (home 8 "Kroos" :left-mid)
                 (home 14 "Casemiro" :center-mid)
-                (home 10 "Modric" :right-mid)
-                (home 22 "Isco" :left-wing)
+                (home 10 "Modric" :right-mid :quick 4)
+                (home 22 "Isco" :left-wing :quick 4)
                 (home 9 "Benzema" :striker)
-                (home 11 "Bale" :right-wing)
+                (home 11 "Bale" :right-wing :quick 4)
                 (away 1 "Ter Stegen" :gk)
                 (away 20 "Roberto" :right-back)
                 (away 3 "Pique" :right-cb)
                 (away 15 "Lenglet" :left-cb)
-                (away 18 "Alba" :left-back)
+                (away 18 "Alba" :left-back :quick 4)
                 (away 4 "Rakitic" :right-mid)
                 (away 5 "Busquets" :center-mid)
-                (away 8 "Arthur" :left-mid)
+                (away 8 "Arthur" :left-mid )
                 (away 12 "Rafinha" :right-wing)
                 (away 9 "Suarez" :striker)
-                (away 7 "Coutinho" :left-wing)]))))
+                (away 7 "Coutinho" :left-wing :quick 4)]))))
 
 (defn init []
   (let [pitch (make-pitch)]
