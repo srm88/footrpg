@@ -42,6 +42,7 @@
 
 (defn make-player []
   {:kind :player
+   :id (gensym "player")
    :team nil
    :number nil
    :name nil
@@ -49,8 +50,14 @@
    :vect nil
    :tile []})
 
+(defn mode [s]
+  (-> s :mode peek))
+
 (defn add-vect [[x y] [dx dy]]
   [(+ x dx) (+ y dy)])
+
+(defn subtract-vect [[x y] [dx dy]]
+  [(- x dx) (- y dy)])
 
 (defn abs [x]
   (if (< x 0) (* x -1) x))
@@ -61,14 +68,21 @@
 (defn levenshtein [[x y] [x* y*]]
   (+ (abs (- x x*)) (abs (- y y*))))
 
-(defn move [thing vect]
+(defn move [thing tile]
+  (debug-log "move " thing " to " tile)
   (-> thing
-      (update :vect vect)
-      (update :tile add-vect vect)))
+      (assoc :vect (subtract-vect tile (:tile thing)))
+      (assoc :tile tile)))
 
 ;; TODO: 0 ending momentum if you move less than max
 (defn can-reach? [player tile]
-  (>= (:quick player) (levenshtein (:tile player) tile)))
+  (>= (:quick player) (levenshtein (add-vect (:tile player) (or (:vect player) [0 0])) tile)))
+
+(defn player-key [s player]
+  (first (keep-indexed (fn [id p]
+                         (debug-log "player id " (:id p) " is at index " id)
+                         (if (= (:id player) (:id p)) id nil))
+                       (-> s :game :players))))
 
 (defn at-tile [s tile]
   (->> s :game :players (filter #(= tile (:tile %))) first))
@@ -92,11 +106,12 @@
        (map #(add-vect tile %))
        (filter #(in-bounds? % pitch))))
 
+; Returns the set of tiles the player can reach
 (defn player-range
-  ([player pitch] (player-range player pitch #{} (list (:tile player))))
+  ([player pitch] (player-range player pitch #{} (list (add-vect (:tile player) (or (:vect player) [0 0])))))
   ([player pitch seen tiles]
     (if (empty? tiles)
-      (vec seen)
+      seen
       (let [tile (first tiles)
             tiles* (pop tiles)]
         (if (or (contains? seen tile) (not (in-bounds? tile pitch)) (not (can-reach? player tile)))
@@ -110,38 +125,46 @@
 ;; This is now meta-game
 
 (defn pitch-cursor-left [s]
-  (-> s
-    (update-in [:cursor 0] dec)
-    (update :cursor bounded (:pitch s))))
+  {:new-state (-> s
+                  (update-in [:cursor 0] dec)
+                  (update :cursor bounded (:pitch s)))})
 
 (defn pitch-cursor-right [s]
-  (-> s
-    (update-in [:cursor 0] inc)
-    (update :cursor bounded (:pitch s))))
+  {:new-state (-> s
+                  (update-in [:cursor 0] inc)
+                  (update :cursor bounded (:pitch s)))})
 
 (defn pitch-cursor-up [s]
-  (-> s
-    (update-in [:cursor 1] dec)
-    (update :cursor bounded (:pitch s))))
+  {:new-state (-> s
+                  (update-in [:cursor 1] dec)
+                  (update :cursor bounded (:pitch s)))})
 
 (defn pitch-cursor-down [s]
-  (-> s
-    (update-in [:cursor 1] inc)
-    (update :cursor bounded (:pitch s))))
+  {:new-state (-> s
+                  (update-in [:cursor 1] inc)
+                  (update :cursor bounded (:pitch s)))})
 
 ;; Only returns players for now
 
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
-    {:into-mode [:player-select player s]}
-    s))
+    {:mode-into [:player-select player s]}
+    nil))
+
+(defn player-move-select [s]
+  (let [tile (:cursor s)]
+    (if (contains? (-> s mode :selected) tile)
+      {:new-state (update-in s [:game :players (player-key s (-> s mode :player))] move tile)
+       :mode-done true}
+      nil)))
 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
-                                  :escape (constantly :exit)
-                                  \q (constantly :exit)})
+                                  :enter player-move-select
+                                  :escape (constantly {:mode-done true})
+                                  \q (constantly {:mode-done true})})
 
 (defn player-select-mode [player s]
   {:name :player-select
@@ -154,8 +177,8 @@
                           :up pitch-cursor-up
                           :down pitch-cursor-down
                           :enter pitch-select
-                          :escape (constantly :hard-exit)
-                          \q (constantly :hard-exit)})
+                          :escape (constantly :game-done)
+                          \q (constantly :game-done)})
 
 (defn pitch-mode []
   {:name :pitch
@@ -239,17 +262,25 @@
 (defn make-mode [mode & args]
   (apply (modes mode) args))
 
+(defn next-state [s reply]
+  (cond
+    (nil? reply) s
+    (= :game-done reply) nil
+    :else (cond-> (or (:new-state reply) s)
+            (contains? reply :mode-into) (-> (update :mode conj (doto (apply make-mode (:mode-into reply)) debug-log))
+                                             (assoc :status-line (str "new mode " (first (:mode-into reply)))))
+            (contains? reply :mode-done) (update :mode pop))))
+
+(defn status-line [s]
+  (str (into [] (map :name (:mode s)))))
+
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
     (debug-log "mode stack: " (into [] (map :name (:mode s))))
-    (let [handler ((-> s :mode peek :handlers) (ascii/input))
-          reply (if (nil? handler) s (apply handler [s]))]
-      (cond
-        (= :hard-exit reply) nil
-        (= :exit reply) (recur (update s :mode pop))
-        (:into-mode reply) (->> (:into-mode reply) (apply make-mode) (update s :mode conj) recur)
-        :else (recur reply)))))
+    (if-let [handler ((-> s mode :handlers) (ascii/input))]
+      (when-let [s* (next-state s (apply handler [s]))] (recur (doto s* #(debug-log "now state " %))))
+      s)))
 
 (defn main [ui-type]
   (ascii/init)

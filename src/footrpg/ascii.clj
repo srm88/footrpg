@@ -40,6 +40,7 @@
     (draw-player state player))
   (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
+  (s/put-string screen 0 (-> state :pitch :height inc inc) (str "> " (:status-line state)))
   (s/redraw screen))
 
 (defn input []
