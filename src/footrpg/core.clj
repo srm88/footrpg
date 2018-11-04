@@ -1,6 +1,8 @@
 (ns footrpg.core
   (:require [footrpg.ascii :as ascii]
-            [footrpg.util :refer [debug-log]])
+            [footrpg.util :refer [debug-log]]
+            [clojure.core.matrix.linear :as linear]
+            [clojure.core.matrix :as matrix])
   (:gen-class))
 
 (defn make-game []
@@ -59,14 +61,11 @@
 (defn subtract-vect [[x y] [dx dy]]
   [(- x dx) (- y dy)])
 
-(defn abs [x]
-  (if (< x 0) (* x -1) x))
-
 (defn magnitude [[x y]]
-  (+ (abs x) (abs y)))
+  (+ (Math/abs x) (Math/abs y)))
 
 (defn levenshtein [[x y] [x* y*]]
-  (+ (abs (- x x*)) (abs (- y y*))))
+  (+ (Math/abs (- x x*)) (Math/abs (- y y*))))
 
 (defn move [thing tile]
   (debug-log "move " thing " to " tile)
@@ -74,9 +73,37 @@
       (assoc :vect (subtract-vect tile (:tile thing)))
       (assoc :tile tile)))
 
+(defn floor [x y]
+  [(int x) (int y)])
+
+(defn cosine-similarity [a b]
+  (if (or (= [0 0] a) (= [0 0] b))
+    0
+    (/ (matrix/dot a b)
+       (* (linear/norm a) (linear/norm b)))))
+
+;; A tile here is roughly 2yd or 1.8m
+;; Fastest players can hit speeds of 35km/h, which is 9.7 m/s
+;; So let's say top pace is 10 yd/s
+;; Maybe a turn is 2s
+;; So Mbappe could go 20 yards in a turn, which is 10 tiles
 ;; TODO: 0 ending momentum if you move less than max
-(defn can-reach? [player tile]
+(defn new-can-reach? [player tile]
+  (let [start-v (or (:vect player) [0 0])
+        end-v (subtract-vect tile (:tile player))
+        dv (subtract-vect end-v start-v)
+        cos-sim (cosine-similarity start-v dv)
+        ;; decelerate-discount will be negative; it decreases the magnitude of the
+        ;; change in momentum
+        decelerate-discount (if (< cos-sim 0)
+                              (-> cos-sim (/ 3) (* (magnitude start-v)))
+                              0)]
+    (<= (+ (magnitude dv) decelerate-discount) (:quick player))))
+
+(defn simple-can-reach? [player tile]
   (>= (:quick player) (levenshtein (add-vect (:tile player) (or (:vect player) [0 0])) tile)))
+
+(def can-reach? new-can-reach?)
 
 (defn player-key [s player]
   (first (keep-indexed (fn [id p]

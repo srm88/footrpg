@@ -4,7 +4,8 @@
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [clojure-lanterna "0.9.7"]]
+                 [clojure-lanterna "0.9.7"]
+                 [net.mikera/core.matrix "0.62.0"]]
   :main ^:skip-aot footrpg.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
