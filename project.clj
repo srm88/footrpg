@@ -6,6 +6,6 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [clojure-lanterna "0.9.7"]
                  [net.mikera/core.matrix "0.62.0"]]
-  :main ^:skip-aot footrpg.core
+  :main ^:skip-aot footrpg.main
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

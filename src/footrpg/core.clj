@@ -1,14 +1,12 @@
 (ns footrpg.core
-  (:require [footrpg.ascii :as ascii]
-            [footrpg.util :refer [debug-log]]
+  (:require [footrpg.util :refer [debug-log]]
             [clojure.core.matrix.linear :as linear]
             [clojure.core.matrix :as matrix])
   (:gen-class))
 
 (defn make-game []
-  {:players []
+  {:entities {:ball nil}
    :teams {:home nil :away nil}
-   :ball nil
    :score {:home 0
            :away 0}})
 
@@ -65,7 +63,6 @@
   (+ (Math/abs (- x x*)) (Math/abs (- y y*))))
 
 (defn move [thing tile]
-  (debug-log "move " thing " to " tile)
   (-> thing
       (assoc :vect (subtract-vect tile (:tile thing)))
       (assoc :tile tile)))
@@ -105,12 +102,13 @@
     (< 0.5 (cosine-similarity player-to-ball ball-to-tile))))
 
 (defn player-key [s player]
-  (first (keep-indexed (fn [id p]
-                         (if (= (:id player) (:id p)) id nil))
-                       (-> s :game :players))))
+  (:id player))
+
+(defn players [s]
+  (->> s :game :entities (vals) (filter #(= (:kind %) :player))))
 
 (defn at-tile [s tile]
-  (->> s :game :players (filter #(= tile (:tile %))) first))
+  (->> s players (filter #(= tile (:tile %))) first))
 
 (def up [0 -1])
 (def down [0 1])
@@ -184,7 +182,7 @@
     nil))
 
 (defn to-player-kick [s]
-  (let [ball-tile (get-in s [:game :ball :tile])
+  (let [ball-tile (get-in s [:game :entities :ball :tile])
         player-tile (get-in s [:mode :player :tile])]
     (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
       {:mode-into [:player-kick (-> s :mode :player) s]})))
@@ -198,12 +196,12 @@
   (let [tile (:cursor s)]
     (debug-log "kick to " tile " , contains? " (contains? (-> s :mode :kick-range) tile))
     (if (contains? (-> s :mode :kick-range) tile)
-      {:new-state (update-in s [:game :ball] move tile)
+      {:new-state (update-in s [:game :entities :ball] move tile)
        :mode-done true})))
 
 (defn player-turn-commit [s]
   (when-let [tile (-> s :mode :move-to-tile)]
-    {:new-state (update-in s [:game :players (player-key s (-> s :mode :player))] move tile)
+    {:new-state (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile)
      :mode-done true}))
 
 (def player-kick-mode-handlers {:left pitch-cursor-left
@@ -219,7 +217,7 @@
    :handlers player-kick-mode-handlers
    :player player
    :kick-to-tile nil
-   :kick-range (player-kick-range player (get-in s [:game :ball]) (:pitch s))})
+   :kick-range (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))})
 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
@@ -253,8 +251,6 @@
 (defn make-state []
   {:cursor [0 0]})
 
-(def state (make-state))
-
 ;; Location utils
 (def formations
      {:433 {:gk [0. 0.5]
@@ -287,41 +283,33 @@
                                                               :name name*
                                                               :tile (-> formations :433 position (away-tile pitch)) args))]
     (-> (make-game)
-        (assoc :ball (assoc (make-ball) :tile (pitch-center pitch)))
+        (assoc :entities {:ball (assoc (make-ball) :tile (pitch-center pitch))})
         (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
                        :away {:name :barcelona :color {:bg :red :fg :white}}})
-        (assoc :players
-               [(home 25 "Courtois" :gk)
-                (home 12 "Marcelo" :left-back)
-                (home 4 "Ramos" :left-cb)
-                (home 5 "Varane" :right-cb)
-                (home 6 "Nacho" :right-back) ;; lol
-                (home 8 "Kroos" :left-mid)
-                (home 14 "Casemiro" :center-mid)
-                (home 10 "Modric" :right-mid :quick 4)
-                (home 22 "Isco" :left-wing :quick 4)
-                (home 9 "Benzema" :striker)
-                (home 11 "Bale" :right-wing :quick 4)
-                (away 1 "Ter Stegen" :gk)
-                (away 20 "Roberto" :right-back)
-                (away 3 "Pique" :right-cb)
-                (away 15 "Lenglet" :left-cb)
-                (away 18 "Alba" :left-back :quick 4)
-                (away 4 "Rakitic" :right-mid)
-                (away 5 "Busquets" :center-mid)
-                (away 8 "Arthur" :left-mid )
-                (away 12 "Rafinha" :right-wing)
-                (away 9 "Suarez" :striker)
-                (away 7 "Coutinho" :left-wing :quick 4)]))))
-
-(defn init []
-  (let [pitch (make-pitch)]
-    (def state (-> state
-                   (assoc :pitch pitch)
-                   (assoc :mode (pitch-mode))
-                   (assoc :modes (list))
-                   (assoc :game (init-game pitch))
-                   (assoc :cursor (pitch-center pitch))))))
+        (update :entities merge (->> [(home 25 "Courtois" :gk)
+                                      (home 12 "Marcelo" :left-back)
+                                      (home 4 "Ramos" :left-cb)
+                                      (home 5 "Varane" :right-cb)
+                                      (home 6 "Nacho" :right-back) ;; lol
+                                      (home 8 "Kroos" :left-mid)
+                                      (home 14 "Casemiro" :center-mid)
+                                      (home 10 "Modric" :right-mid :quick 4)
+                                      (home 22 "Isco" :left-wing :quick 4)
+                                      (home 9 "Benzema" :striker)
+                                      (home 11 "Bale" :right-wing :quick 4)
+                                      (away 1 "Ter Stegen" :gk)
+                                      (away 20 "Roberto" :right-back)
+                                      (away 3 "Pique" :right-cb)
+                                      (away 15 "Lenglet" :left-cb)
+                                      (away 18 "Alba" :left-back :quick 4)
+                                      (away 4 "Rakitic" :right-mid)
+                                      (away 5 "Busquets" :center-mid)
+                                      (away 8 "Arthur" :left-mid )
+                                      (away 12 "Rafinha" :right-wing)
+                                      (away 9 "Suarez" :striker)
+                                      (away 7 "Coutinho" :left-wing :quick 4)]
+                                     (map #(vector (:id %) %))
+                                     (into {}))))))
 
 ;; Dispatcher to avoid circular function dependencies
 (def modes {:pitch pitch-mode
@@ -346,27 +334,3 @@
        (into [(:mode s)])
        (map :name)
        str))
-
-(defn main-loop []
-  (loop [s state]
-    (ascii/redraw s)
-    (debug-log "mode: " (-> s :mode :name)  ", stack: " (into [] (map :name (:modes s))))
-    (let [input-key (ascii/input)
-          s* (or (some-> s
-                         :mode
-                         :handlers
-                         (get input-key)
-                         (apply [s])
-                         (next-state s))
-                 s)]
-      (when-not (= s* :game-done) (recur s*)))))
-
-(defn main [ui-type]
-  (ascii/init)
-  (try
-    (init)
-    (main-loop)
-    (finally (ascii/stop))))
-
-(defn -main [& args]
-  (main :ascii))

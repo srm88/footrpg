@@ -1,5 +1,7 @@
 (ns footrpg.ascii
-  (:require [lanterna.screen :as s]
+  (:require [footrpg.core :as f]
+            [footrpg.util :refer [debug-log]]
+            [lanterna.screen :as s]
             [clojure.string :as string]))
 
 (def ascii-pitch (string/split-lines (slurp "resources/ascii-pitch.txt")))
@@ -44,11 +46,11 @@
     (if (-> state :mode :move-to-tile (= tile))
       (put-pitch (:pitch state) tile "[]" {:bg :magenta :fg :white})
       (put-pitch (:pitch state) tile "  " {:bg :magenta :fg :magenta})))
-  (doseq [player (-> state :game :players)]
+  (doseq [player (f/players state)]
     (draw-player state player))
   (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
-  (put-pitch (:pitch state) (-> state :game :ball :tile ) ball-glyph)
+  (put-pitch (:pitch state) (-> state :game :entities :ball :tile ) ball-glyph)
   (s/put-string screen 0 (-> state :pitch :height inc inc) (str "> " (:status-line state)))
   (s/redraw screen))
 
