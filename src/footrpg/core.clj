@@ -177,7 +177,7 @@
 
 (defn player-move-select [s]
   (let [tile (:cursor s)]
-    (if (contains? (-> s mode :selected) tile)
+    (if (contains? (-> s mode :move-range) tile)
       {:new-state (update-in s [:game :players (player-key s (-> s mode :player))] move tile)
        :mode-done true}
       nil)))
@@ -186,7 +186,7 @@
                                   :right pitch-cursor-right
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
-                                  :enter player-move-select
+                                  \m player-move-select
                                   :escape (constantly {:mode-done true})
                                   \q (constantly {:mode-done true})})
 
@@ -194,7 +194,7 @@
   {:name :player-select
    :handlers player-select-mode-handlers
    :player player
-   :selected (player-range player (:pitch s))})
+   :move-range (player-range player (:pitch s))})
 
 (def pitch-mode-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
