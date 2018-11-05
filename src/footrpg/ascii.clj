@@ -40,6 +40,10 @@
     (if (-> state :mode :move-to-tile (= tile))
       (put-pitch (:pitch state) tile "[]" {:bg :cyan :fg :white})
       (put-pitch (:pitch state) tile "  " {:bg :cyan :fg :cyan})))
+  (doseq [tile (-> state :mode :kick-range)]
+    (if (-> state :mode :move-to-tile (= tile))
+      (put-pitch (:pitch state) tile "[]" {:bg :magenta :fg :white})
+      (put-pitch (:pitch state) tile "  " {:bg :magenta :fg :magenta})))
   (doseq [player (-> state :game :players)]
     (draw-player state player))
   (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
