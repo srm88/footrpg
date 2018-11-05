@@ -52,9 +52,6 @@
    :vect nil
    :tile []})
 
-(defn mode [s]
-  (-> s :mode peek))
-
 (defn add-vect [[x y] [dx dy]]
   [(+ x dx) (+ y dy)])
 
@@ -177,8 +174,8 @@
 
 (defn player-move-select [s]
   (let [tile (:cursor s)]
-    (if (contains? (-> s mode :move-range) tile)
-      {:new-state (update-in s [:game :players (player-key s (-> s mode :player))] move tile)
+    (if (contains? (-> s :mode :move-range) tile)
+      {:new-state (update-in s [:game :players (player-key s (-> s :mode :player))] move tile)
        :mode-done true}
       nil)))
 
@@ -276,7 +273,8 @@
   (let [pitch (make-pitch)]
     (def state (-> state
                    (assoc :pitch pitch)
-                   (assoc :mode (list (pitch-mode)))
+                   (assoc :mode (pitch-mode))
+                   (assoc :modes (list))
                    (assoc :game (init-game pitch))
                    (assoc :cursor (pitch-center pitch))))))
 
@@ -287,25 +285,34 @@
 (defn make-mode [mode & args]
   (apply (modes mode) args))
 
-(defn next-state [s reply]
+(defn next-state [reply s]
   (cond
-    (nil? reply) s
-    (= :game-done reply) nil
+    (= :game-done reply) :game-done
     :else (cond-> (or (:new-state reply) s)
-            (contains? reply :mode-into) (-> (update :mode conj (doto (apply make-mode (:mode-into reply)) debug-log))
+            (contains? reply :mode-into) (-> (update :modes conj (:mode s))
+                                             (assoc :mode (apply make-mode (:mode-into reply)))
                                              (assoc :status-line (str "new mode " (first (:mode-into reply)))))
-            (contains? reply :mode-done) (update :mode pop))))
+            (contains? reply :mode-done) (-> (assoc :mode (-> s :modes peek))
+                                             (update :modes pop)))))
 
 (defn status-line [s]
-  (str (into [] (map :name (:mode s)))))
+  (->> (:modes s)
+       (into [(:mode s)])
+       (map :name)
+       str))
 
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
-    (debug-log "mode stack: " (into [] (map :name (:mode s))))
-    (if-let [handler ((-> s mode :handlers) (ascii/input))]
-      (when-let [s* (next-state s (apply handler [s]))] (recur (doto s* #(debug-log "now state " %))))
-      s)))
+    (debug-log "mode: " (-> s :mode :name)  ", stack: " (into [] (map :name (:modes s))))
+    (let [input-key (ascii/input)
+          s* (some-> s
+                     :mode
+                     :handlers
+                     (get input-key)
+                     (apply [s])
+                     (next-state s))]
+      (when-not (= s* :game-down) (recur s*)))))
 
 (defn main [ui-type]
   (ascii/init)

@@ -36,7 +36,7 @@
 (defn redraw [state]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
-  (doseq [tile (-> state :mode peek :move-range)]
+  (doseq [tile (-> state :mode :move-range)]
     (put-pitch (:pitch state) tile "  " {:bg :cyan :fg :cyan}))
   (doseq [player (-> state :game :players)]
     (draw-player state player))
