@@ -22,6 +22,8 @@
   (let [[num-first num-second] (str (:number player))]
     (str num-first (or num-second " "))))
 
+(def ball-glyph "@")
+
 (defn put-pitch [pitch tile & args]
   (let [[x y] (transpose-tile tile pitch)]
     (apply s/put-string screen x y args)))
@@ -40,6 +42,7 @@
     (draw-player state player))
   (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
+  (put-pitch (:pitch state) (-> state :game :ball :tile ) ball-glyph)
   (s/put-string screen 0 (-> state :pitch :height inc inc) (str "> " (:status-line state)))
   (s/redraw screen))
 

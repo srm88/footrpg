@@ -100,9 +100,6 @@
                               0)]
     (<= (+ (magnitude dv) decelerate-discount) (:quick player))))
 
-(defn simple-can-reach? [player tile]
-  (>= (:quick player) (levenshtein (add-vect (:tile player) (or (:vect player) [0 0])) tile)))
-
 (def can-reach? new-can-reach?)
 
 (defn player-key [s player]
@@ -248,6 +245,7 @@
                                                               :name name*
                                                               :tile (-> formations :433 position (away-tile pitch)) args))]
     (-> (make-game)
+        (assoc :ball (assoc (make-ball) :tile (pitch-center pitch)))
         (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
                        :away {:name :barcelona :color {:bg :red :fg :white}}})
         (assoc :players
