@@ -1,5 +1,6 @@
 (ns footrpg.core
   (:require [footrpg.util :refer [debug-log]]
+            [clojure.string :as string]
             [clojure.core.matrix.linear :as linear]
             [clojure.core.matrix :as matrix])
   (:gen-class))
@@ -187,8 +188,11 @@
 (declare player-turn-commit)
 
 (defn set-status-line [s]
-  (assoc s :status-line (str "current: " (-> s :mode :name)
-                             " stack: " (->> (:modes s) (map :name) (into []) str))))
+  (->> (:modes s)
+       (into [(:mode s)])
+       (map :name)
+       (string/join " < ")
+       (assoc s :status-line)))
 
 (defn mode-into [s mode-fn & args]
   (let [current (:mode s)

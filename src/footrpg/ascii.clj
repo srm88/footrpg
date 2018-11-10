@@ -51,6 +51,7 @@
   (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
     (s/move-cursor screen curs-x curs-y))
   (put-pitch (:pitch state) (-> state :game :entities :ball :tile ) ball-glyph)
+  (s/put-string screen 0 (-> state :pitch :height inc inc) (apply str (repeat 80 " ")))
   (s/put-string screen 0 (-> state :pitch :height inc inc) (str "> " (:status-line state)))
   (s/redraw screen))
 
