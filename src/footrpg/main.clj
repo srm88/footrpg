@@ -20,11 +20,7 @@
     (ascii/redraw s)
     (debug-log "mode: " (-> s :mode :name)  ", stack: " (into [] (map :name (:modes s))))
     (let [input-key (ascii/input)
-          s* (or (doto (some-> s
-                         :mode
-                         :handlers
-                         (get input-key)
-                         (apply [s])) (debug-log " from handler of mode " (-> s :mode :name)))
+          s* (or (apply (-> s :mode :handler) [s input-key])
                  s)]
       (when-not (= s* :game-done) (recur s*)))))
 

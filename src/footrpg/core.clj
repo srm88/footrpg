@@ -228,6 +228,9 @@
   (when-let [tile (-> s :mode :move-to-tile)]
     (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile)))
 
+(defn dispatcher [handlers]
+  (fn [s c] (when-let [f (get handlers c)] (f s))))
+
 (def player-kick-mode-handlers {:left pitch-cursor-left
                                 :right pitch-cursor-right
                                 :up pitch-cursor-up
@@ -238,7 +241,7 @@
 
 (defn player-kick-mode [player s]
   {:name :player-kick
-   :handlers player-kick-mode-handlers
+   :handler (dispatcher player-kick-mode-handlers)
    :player player
    :kick-to-tile nil
    :kick-range (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))})
@@ -255,7 +258,7 @@
 
 (defn player-select-mode [player s]
   {:name :player-select
-   :handlers player-select-mode-handlers
+   :handler (dispatcher player-select-mode-handlers)
    :player player
    :move-to-tile nil
    :move-range (player-range player (:pitch s))})
@@ -270,7 +273,7 @@
 
 (defn pitch-mode []
   {:name :pitch
-   :handlers pitch-mode-handlers})
+   :handler (dispatcher pitch-mode-handlers)})
 
 (defn make-state []
   {:cursor [0 0]})
