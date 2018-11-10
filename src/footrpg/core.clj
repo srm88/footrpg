@@ -210,11 +210,6 @@
       set-status-line)
     :game-done))
 
-(defn dispatcher [handlers]
-  (fn [s input-key]
-    (when-let [f (get handlers input-key)]
-      (apply f [s]))))
-
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
     (-> s
@@ -236,7 +231,7 @@
 (declare player-select-mode-handlers)
 (defn player-select-mode [s player]
   {:name :player-select
-   :handler (dispatcher player-select-mode-handlers)
+   :handlers player-select-mode-handlers
    :player player
    :move-to-tile nil
    :move-range (player-range player (:pitch s))})
@@ -246,7 +241,7 @@
 (declare player-kick-mode-handlers)
 (defn player-kick-mode [s player]
   {:name :player-kick
-   :handler (dispatcher player-kick-mode-handlers)
+   :handlers player-kick-mode-handlers
    :player player
    :kick-to-tile nil
    :kick-range (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))})
@@ -291,7 +286,7 @@
 
 (defn pitch-mode [s]
   {:name :pitch
-   :handler (dispatcher pitch-mode-handlers)})
+   :handlers pitch-mode-handlers})
 
 (defn make-state []
   {:cursor [0 0]})
