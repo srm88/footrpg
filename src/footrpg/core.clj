@@ -155,62 +155,86 @@
 ;; This is now meta-game
 
 (defn pitch-cursor-left [s]
-  {:new-state (-> s
-                  (update-in [:cursor 0] dec)
-                  (update :cursor bounded (:pitch s)))})
+  (-> s
+      (update-in [:cursor 0] dec)
+      (update :cursor bounded (:pitch s))))
 
 (defn pitch-cursor-right [s]
-  {:new-state (-> s
-                  (update-in [:cursor 0] inc)
-                  (update :cursor bounded (:pitch s)))})
+  (-> s
+      (update-in [:cursor 0] inc)
+      (update :cursor bounded (:pitch s))))
 
 (defn pitch-cursor-up [s]
-  {:new-state (-> s
-                  (update-in [:cursor 1] dec)
-                  (update :cursor bounded (:pitch s)))})
+  (-> s
+      (update-in [:cursor 1] dec)
+      (update :cursor bounded (:pitch s))))
 
 (defn pitch-cursor-down [s]
-  {:new-state (-> s
-                  (update-in [:cursor 1] inc)
-                  (update :cursor bounded (:pitch s)))})
+  (-> s
+      (update-in [:cursor 1] inc)
+      (update :cursor bounded (:pitch s))))
 
 ;; Only returns players for now
 
+(def game-done (constantly :game-done))
+
+(declare pitch-mode)
+(declare player-select-mode)
+(declare player-kick-mode)
+
+(defn set-status-line [s]
+  (assoc s :status-line (str "current: " (-> s :mode :name)
+                             " stack: " (->> (:modes s) (map :name) (into []) str))))
+
+(defn mode-into [s mode]
+  (let [current (:mode s)]
+    (-> s
+        (update :modes conj current)
+        (assoc :mode mode)
+        set-status-line)))
+
+(defn mode-done [s]
+  (if-let [previous (-> s :modes peek)]
+    (-> s
+      (assoc :mode previous)
+      (update :modes pop)
+      set-status-line)
+    :game-done))
+
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
-    {:mode-into [:player-select player s]}
+    (mode-into s (player-select-mode player s))
     nil))
 
 (defn to-player-kick [s]
   (let [ball-tile (get-in s [:game :entities :ball :tile])
         player-tile (get-in s [:mode :player :tile])]
     (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
-      {:mode-into [:player-kick (-> s :mode :player) s]})))
+      (mode-into s (player-kick-mode (-> s :mode :player) s)))))
 
 (defn player-move-select [s]
   (let [tile (:cursor s)]
     (when (contains? (-> s :mode :move-range) tile)
-      {:new-state (assoc-in s [:mode :move-to-tile] tile)})))
+      (assoc-in s [:mode :move-to-tile] tile))))
 
 (defn player-kick-select [s]
   (let [tile (:cursor s)]
     (debug-log "kick to " tile " , contains? " (contains? (-> s :mode :kick-range) tile))
     (if (contains? (-> s :mode :kick-range) tile)
-      {:new-state (update-in s [:game :entities :ball] move tile)
-       :mode-done true})))
+      (update-in s [:game :entities :ball] move tile))))
 
+;; Bad
 (defn player-turn-commit [s]
   (when-let [tile (-> s :mode :move-to-tile)]
-    {:new-state (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile)
-     :mode-done true}))
+    (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile)))
 
 (def player-kick-mode-handlers {:left pitch-cursor-left
                                 :right pitch-cursor-right
                                 :up pitch-cursor-up
                                 :down pitch-cursor-down
                                 :enter player-kick-select
-                                :escape (constantly {:mode-done true})
-                                \q (constantly {:mode-done true})})
+                                :escape mode-done
+                                \q mode-done})
 
 (defn player-kick-mode [player s]
   {:name :player-kick
@@ -226,8 +250,8 @@
                                   \m player-move-select
                                   \k to-player-kick
                                   :enter player-turn-commit
-                                  :escape (constantly {:mode-done true})
-                                  \q (constantly {:mode-done true})})
+                                  :escape mode-done
+                                  \q mode-done})
 
 (defn player-select-mode [player s]
   {:name :player-select
@@ -241,8 +265,8 @@
                           :up pitch-cursor-up
                           :down pitch-cursor-down
                           :enter pitch-select
-                          :escape (constantly :game-done)
-                          \q (constantly :game-done)})
+                          :escape game-done
+                          \q game-done})
 
 (defn pitch-mode []
   {:name :pitch
@@ -310,27 +334,3 @@
                                       (away 7 "Coutinho" :left-wing :quick 4)]
                                      (map #(vector (:id %) %))
                                      (into {}))))))
-
-;; Dispatcher to avoid circular function dependencies
-(def modes {:pitch pitch-mode
-            :player-select player-select-mode
-            :player-kick player-kick-mode})
-
-(defn make-mode [mode & args]
-  (apply (modes mode) args))
-
-(defn next-state [reply s]
-  (if (= :game-done reply)
-    :game-done
-    (cond-> (or (:new-state reply) s)
-      (contains? reply :mode-into) (-> (update :modes conj (:mode s))
-                                       (assoc :mode (apply make-mode (:mode-into reply)))
-                                       (assoc :status-line (str "new mode " (first (:mode-into reply)))))
-      (contains? reply :mode-done) (-> (assoc :mode (-> s :modes peek))
-                                       (update :modes pop)))))
-
-(defn status-line [s]
-  (->> (:modes s)
-       (into [(:mode s)])
-       (map :name)
-       str))
