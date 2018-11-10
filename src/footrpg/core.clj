@@ -180,21 +180,19 @@
 
 (declare pitch-mode)
 (declare player-select-mode)
+(declare maybe-player-kick-mode)
 (declare player-kick-mode)
+(declare player-kick-select)
+(declare player-move-mode)
+(declare player-turn-commit)
 
 (defn set-status-line [s]
   (assoc s :status-line (str "current: " (-> s :mode :name)
                              " stack: " (->> (:modes s) (map :name) (into []) str))))
 
-(defn get-return-from-mode [s mode]
-  (let [current (:mode s)]
-    (-> s
-        (update :modes conj current)
-        (assoc :mode mode)
-        set-status-line)))
-
-(defn mode-into [s mode]
-  (let [current (:mode s)]
+(defn mode-into [s mode-fn & args]
+  (let [current (:mode s)
+        mode (apply mode-fn s args)]
     (-> s
         (update :modes conj current)
         (assoc :mode mode)
@@ -208,70 +206,58 @@
       set-status-line)
     :game-done))
 
+(defn dispatcher [handlers]
+  (fn [s input-key]
+    (when-let [f (get handlers input-key)]
+      (apply f [s]))))
+
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
-    (let [s* (mode-into s (player-select-mode player s))]
-      (get-return-from-mode s* (player-move-input player s*)))
+    (-> s
+        (mode-into player-select-mode player))
     nil))
-
-(defn player-kick-input [s]
-  (let [ball-tile (get-in s [:game :entities :ball :tile])
-        player-tile (get-in s [:mode :player :tile])]
-    (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
-      (mode-into s (player-kick-mode (-> s :mode :player) s)))))
-
-(defn player-move-select [s]
-  (let [tile (:cursor s)]
-    (when (contains? (-> s :mode :move-range) tile)
-      {:input tile})))
-      ; XXX return-from
-      ;(assoc-in s [:mode :move-to-tile] tile))))
-
-(defn player-kick-select [s]
-  (let [tile (:cursor s)]
-    (debug-log "kick to " tile " , contains? " (contains? (-> s :mode :kick-range) tile))
-    (if (contains? (-> s :mode :kick-range) tile)
-      (update-in s [:game :entities :ball] move tile))))
 
 ;; Bad
 (defn player-turn-commit [s]
   (when-let [tile (-> s :mode :move-to-tile)]
     (mode-done (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile))))
 
-(defn dispatcher [handlers]
-  (fn [s c] (when-let [f (get handlers c)] (f s))))
+(defn player-move-mode [s]
+  (let [tile (:cursor s)]
+    (when (contains? (-> s :mode :move-range) tile)
+      ;{:input tile})))
+      ; XXX return-from
+      (assoc-in s [:mode :move-to-tile] tile))))
 
-(def player-kick-mode-handlers {:left pitch-cursor-left
-                                :right pitch-cursor-right
-                                :up pitch-cursor-up
-                                :down pitch-cursor-down
-                                :enter player-kick-select
-                                :escape mode-done
-                                \q mode-done})
+(declare player-select-mode-handlers)
+(defn player-select-mode [s player]
+  {:name :player-select
+   :handler (dispatcher player-select-mode-handlers)
+   :player player
+   :move-to-tile nil
+   :move-range (player-range player (:pitch s))})
 
-(defn player-kick-mode [player s]
+;; ### kick
+
+(declare player-kick-mode-handlers)
+(defn player-kick-mode [s player]
   {:name :player-kick
    :handler (dispatcher player-kick-mode-handlers)
    :player player
    :kick-to-tile nil
    :kick-range (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))})
 
-(def player-select-mode-handlers {:left pitch-cursor-left
-                                  :right pitch-cursor-right
-                                  :up pitch-cursor-up
-                                  :down pitch-cursor-down
-                                  \m player-move-select
-                                  \k player-kick-input
-                                  :enter player-turn-commit
-                                  :escape mode-done
-                                  \q mode-done})
+(defn maybe-player-kick-mode [s]
+  (let [ball-tile (get-in s [:game :entities :ball :tile])
+        player-tile (get-in s [:mode :player :tile])]
+    (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
+      (mode-into s player-kick-mode (-> s :mode :player)))))
 
-(defn player-select-mode [player s]
-  {:name :player-select
-   :handler (dispatcher player-select-mode-handlers)
-   :player player
-   :move-to-tile nil
-   :move-range (player-range player (:pitch s))})
+(defn player-kick-select [s]
+  (let [tile (:cursor s)]
+    (debug-log "kick to " tile " , contains? " (contains? (-> s :mode :kick-range) tile))
+    (if (contains? (-> s :mode :kick-range) tile)
+      (update-in s [:game :entities :ball] move tile))))
 
 (def pitch-mode-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
@@ -281,7 +267,25 @@
                           :escape game-done
                           \q game-done})
 
-(defn pitch-mode []
+(def player-select-mode-handlers {:left pitch-cursor-left
+                                  :right pitch-cursor-right
+                                  :up pitch-cursor-up
+                                  :down pitch-cursor-down
+                                  \m player-move-mode
+                                  \k maybe-player-kick-mode
+                                  :enter player-turn-commit
+                                  :escape mode-done
+                                  \q mode-done})
+
+(def player-kick-mode-handlers {:left pitch-cursor-left
+                                :right pitch-cursor-right
+                                :up pitch-cursor-up
+                                :down pitch-cursor-down
+                                :enter #'player-kick-select
+                                :escape mode-done
+                                \q mode-done})
+
+(defn pitch-mode [s]
   {:name :pitch
    :handler (dispatcher pitch-mode-handlers)})
 

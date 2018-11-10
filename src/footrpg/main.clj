@@ -7,13 +7,13 @@
 (def state (f/make-state))
 
 (defn init []
-  (let [pitch (f/make-pitch)]
-    (def state (-> state
-                   (assoc :pitch pitch)
-                   (assoc :mode (f/pitch-mode))
-                   (assoc :modes (list))
-                   (assoc :game (f/init-game pitch))
-                   (assoc :cursor (f/pitch-center pitch))))))
+  (let [pitch (f/make-pitch)
+        s (-> state
+              (assoc :pitch pitch)
+              (assoc :modes (list))
+              (assoc :game (f/init-game pitch))
+              (assoc :cursor (f/pitch-center pitch)))]
+    (def state (assoc s :mode (f/pitch-mode s)))))
 
 (defn main-loop []
   (loop [s state]
