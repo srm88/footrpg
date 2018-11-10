@@ -186,6 +186,13 @@
   (assoc s :status-line (str "current: " (-> s :mode :name)
                              " stack: " (->> (:modes s) (map :name) (into []) str))))
 
+(defn get-return-from-mode [s mode]
+  (let [current (:mode s)]
+    (-> s
+        (update :modes conj current)
+        (assoc :mode mode)
+        set-status-line)))
+
 (defn mode-into [s mode]
   (let [current (:mode s)]
     (-> s
@@ -203,10 +210,11 @@
 
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
-    (mode-into s (player-select-mode player s))
+    (let [s* (mode-into s (player-select-mode player s))]
+      (get-return-from-mode s* (player-move-input player s*)))
     nil))
 
-(defn to-player-kick [s]
+(defn player-kick-input [s]
   (let [ball-tile (get-in s [:game :entities :ball :tile])
         player-tile (get-in s [:mode :player :tile])]
     (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
@@ -215,7 +223,9 @@
 (defn player-move-select [s]
   (let [tile (:cursor s)]
     (when (contains? (-> s :mode :move-range) tile)
-      (assoc-in s [:mode :move-to-tile] tile))))
+      {:input tile})))
+      ; XXX return-from
+      ;(assoc-in s [:mode :move-to-tile] tile))))
 
 (defn player-kick-select [s]
   (let [tile (:cursor s)]
@@ -226,7 +236,7 @@
 ;; Bad
 (defn player-turn-commit [s]
   (when-let [tile (-> s :mode :move-to-tile)]
-    (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile)))
+    (mode-done (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile))))
 
 (defn dispatcher [handlers]
   (fn [s c] (when-let [f (get handlers c)] (f s))))
@@ -251,7 +261,7 @@
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
                                   \m player-move-select
-                                  \k to-player-kick
+                                  \k player-kick-input
                                   :enter player-turn-commit
                                   :escape mode-done
                                   \q mode-done})
