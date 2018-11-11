@@ -137,9 +137,6 @@
         ball-to-tile (subtract-vect tile (:tile ball))]
     (< 0.5 (cosine-similarity player-to-ball ball-to-tile))))
 
-(defn player-key [s player]
-  (:id player))
-
 (defn players [s]
   (->> s :game :entities (vals) (filter #(= (:kind %) :player))))
 
@@ -264,29 +261,47 @@
     :game-done))
 
 (defn return [s value]
-  (debug-log "returning " value)
   (-> s
       (update :returns conj value)
       mode-done))
 
-;; updating player and ball in place?
+;; Multimethod?
+(defn act [s action]
+  (if-let [m (:move action)]
+    (update-in s [:game :entities (:entity m)] move (:to m))
+    s))
+
+(defn player-move-action [player to]
+  {:kind :action
+   :action :move
+   :move {:entity (:id player)
+          :from (:tile player)
+          :to to}})
+
+(defn player-kick-action [player ball to]
+  {:kind :action
+   :action :kick
+   :player player
+   :move {:entity :ball
+          :from (:tile ball)
+          :to to}})
+
 (defn player-turn-commit [s]
   (let [m (:mode s)
         player (:player m)
-        ball (:ball m)]
-    (mode-done (cond-> s
-                 (some? (:player-move m)) (assoc-in [:game :entities (player-key s player)] player)
-                 (some? (:ball-move m)) (assoc-in [:game :entities :ball] ball)))))
+        ball (:ball m)
+        actions (:actions m)]
+    ;; Generic 'apply list of actions'
+    (mode-done (if (seq actions)
+                 (reduce act s actions)
+                 s))))
 
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
     (-> s
         (mode-into player-select-mode player)
         (expect-return (fn [s* tile]
-                         (debug-log "player should move to " tile)
-                         (-> s*
-                             (assoc-in [:mode :player-move] [(:tile player) tile])
-                             (update-in [:mode :player] move tile)))
+                         (update-in s* [:mode :actions] conj (player-move-action player tile)))
                        tile-input-mode :player-move (player-range player (:pitch s))))
     nil))
 
@@ -296,31 +311,29 @@
    :handlers player-select-mode-handlers
    :player player
    :ball (get-in s [:game :entities :ball])
-   :player-move nil
-   :ball-move nil})
+   :actions []})
+
+(defn action-taken [mode action-kind]
+  (seq (filter #(= (:action %) action-kind) (:actions mode))))
 
 ;; ### kick
 (defn maybe-player-move-mode [s]
-  (when (nil? (get-in s [:mode :player-move]))
+  (when (not (action-taken (:mode s) :move))
     (let [player (get-in s [:mode :player])]
       (expect-return s (fn [s* tile]
-                         (debug-log "player should move to " tile)
-                         (-> s*
-                             (assoc-in [:mode :player-move] [(:tile player) tile])
-                             (update-in [:mode :player] move tile)))
+                         (update-in s* [:mode :actions] conj (player-move-action player tile)))
                      tile-input-mode :player-move (player-range player (:pitch s))))))
 
 (defn maybe-player-kick-mode [s]
-  (let [ball-tile (get-in s [:game :entities :ball :tile])
+  (let [ball (get-in s [:game :entities :ball])
+        ball-tile (:tile ball)
         player (get-in s [:mode :player])
         player-tile (:tile player)]
-    (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
+    (when (and (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
+               (not (action-taken (:mode s) :kick)))
       (expect-return s (fn [s* tile]
-                         (debug-log "player should kick to " tile)
-                         (-> s*
-                             (assoc-in [:mode :ball-move] [ball-tile tile])
-                             (update-in [:mode :ball] move tile)))
-                     tile-input-mode :player-kick (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))))))
+                         (update-in s* [:mode :actions] conj (player-kick-action player ball tile)))
+                     tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
 
 (def pitch-mode-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
