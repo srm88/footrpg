@@ -19,18 +19,25 @@
   (let [handlers (get-in s [:mode :handlers])
         return-handler (get-in s [:mode :return-handler])]
     (cond
-      (= :key (:kind input)) (when-let [f (get handlers (:key input))] (f s))
+      (= :key (:kind input)) (when-let [f (get handlers (:value input))] (f s))
       (and (= :return (:kind input))
            (some? return-handler)) (return-handler (assoc-in s [:mode :return-handler] nil) (:value input)))))
+
+(defn get-input [s]
+  (if (seq (:returns s))
+    (do
+      (debug-log "Got a stored input: " (-> s :returns peek))
+      [{:kind :return :value (-> s :returns peek)} (update s :returns pop)])
+    [{:kind :key :value (ascii/input)} s]))
 
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
-    (debug-log "mode: " (-> s :mode :name)  ", stack: " (into [] (map :name (:modes s))))
-    (let [input-key (ascii/input)
-          s* (or (dispatcher s {:kind :key :key input-key})
-                 s)]
-      (when-not (= s* :game-done) (recur s*)))))
+    (let [[input s*] (get-input s)
+          s** (or (dispatcher s* input) s*)]
+      (when-not (= s** :game-done)
+        (debug-log (f/dump-state s**))
+        (recur s**)))))
 
 (defn main []
   (ascii/init)

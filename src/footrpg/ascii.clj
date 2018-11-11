@@ -30,29 +30,30 @@
   (let [[x y] (transpose-tile tile pitch)]
     (apply s/put-string screen x y args)))
 
-(defn draw-player [state player]
-  (let [color (get-in state [:game :teams (:team player) :color])
+(defn draw-player [s player]
+  (let [color (get-in s [:game :teams (:team player) :color])
         glyph (player-glyph player)]
-    (put-pitch (:pitch state) (:tile player) (str glyph) color)))
+    (put-pitch (:pitch s) (:tile player) (str glyph) color)))
 
-(defn redraw [state]
+(defn redraw [s]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
-  (doseq [tile (-> state :mode :move-range)]
-    (if (-> state :mode :move-to-tile (= tile))
-      (put-pitch (:pitch state) tile "[]" {:bg :cyan :fg :white})
-      (put-pitch (:pitch state) tile "  " {:bg :cyan :fg :cyan})))
-  (doseq [tile (-> state :mode :kick-range)]
-    (if (-> state :mode :move-to-tile (= tile))
-      (put-pitch (:pitch state) tile "[]" {:bg :magenta :fg :white})
-      (put-pitch (:pitch state) tile "  " {:bg :magenta :fg :magenta})))
-  (doseq [player (f/players state)]
-    (draw-player state player))
-  (let [[curs-x curs-y] (transpose-tile (:cursor state) (:pitch state))]
+  (when (= (-> s :mode :name) :player-move)
+    (doseq [tile (-> s :mode :tile-range)]
+      (if (-> s :mode :move-to-tile (= tile))
+        (put-pitch (:pitch s) tile "[]" {:bg :cyan :fg :white})
+        (put-pitch (:pitch s) tile "  " {:bg :cyan :fg :cyan}))))
+  (doseq [tile (-> s :mode :kick-range)]
+    (if (-> s :mode :move-to-tile (= tile))
+      (put-pitch (:pitch s) tile "[]" {:bg :magenta :fg :white})
+      (put-pitch (:pitch s) tile "  " {:bg :magenta :fg :magenta})))
+  (doseq [player (f/players s)]
+    (draw-player s player))
+  (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
     (s/move-cursor screen curs-x curs-y))
-  (put-pitch (:pitch state) (-> state :game :entities :ball :tile ) ball-glyph)
-  (s/put-string screen 0 (-> state :pitch :height inc inc) (apply str (repeat 80 " ")))
-  (s/put-string screen 0 (-> state :pitch :height inc inc) (str "> " (:status-line state)))
+  (put-pitch (:pitch s) (-> s :game :entities :ball :tile ) ball-glyph)
+  (s/put-string screen 0 (-> s :pitch :height inc inc) (apply str (repeat 80 " ")))
+  (s/put-string screen 0 (-> s :pitch :height inc inc) (str "> " (:status-line s)))
   (s/redraw screen))
 
 (defn input []

@@ -184,15 +184,33 @@
 (declare maybe-player-kick-mode)
 (declare player-kick-mode)
 (declare player-kick-select)
-(declare player-move-mode)
 (declare player-turn-commit)
+(declare tile-input-mode)
 
-(defn set-status-line [s]
+(defn dump-modes [s]
   (->> (:modes s)
        (into [(:mode s)])
        (map :name)
-       (string/join " < ")
-       (assoc s :status-line)))
+       (string/join " < ")))
+
+(defn subs* [s length]
+  (subs s 0 (min (count s) length)))
+
+(defn dump-mode [s]
+  (let [m (:mode s)
+        mode-name (:name m)]
+    (str mode-name "\n  " (string/join "\n  " (for [[k v] (dissoc m :name :handlers)]
+                                                (str k ": " (subs* (str v) 20)))))))
+
+(defn dump-state [s]
+  (str "State\n"
+       "  modes: " (dump-modes s) "\n"
+       "  returns: " (str (:returns s)) "\n"
+       "  mode: " (dump-mode s)
+       ))
+
+(defn set-status-line [s]
+  (assoc s :status-line (dump-modes s)))
 
 (defn mode-into [s mode-fn & args]
   (let [current (:mode s)
@@ -202,39 +220,47 @@
         (assoc :mode mode)
         set-status-line)))
 
+(defn expect-return [s handler mode-fn & args]
+  (debug-log "expecting return in mode " (-> s :mode :name))
+  (apply mode-into (assoc-in s [:mode :return-handler] handler)
+                   mode-fn args))
+
 (defn mode-done [s]
   (if-let [previous (-> s :modes peek)]
     (-> s
-      (assoc :mode previous)
-      (update :modes pop)
-      set-status-line)
+        (assoc :mode (cond-> previous
+                       (empty? (:returns s)) (assoc :return-handler nil)))
+        (update :modes pop)
+        set-status-line)
     :game-done))
 
-(defn pitch-select [s]
-  (if-let [player (at-tile s (:cursor s))]
-    (-> s
-        (mode-into player-select-mode player))
-    nil))
+(defn return [s value]
+  (debug-log "returning " value)
+  (-> s
+      (update :returns conj value)
+      mode-done))
 
 ;; Bad
 (defn player-turn-commit [s]
   (when-let [tile (-> s :mode :move-to-tile)]
     (mode-done (update-in s [:game :entities (player-key s (-> s :mode :player))] move tile))))
 
-(defn player-move-mode [s]
-  (let [tile (:cursor s)]
-    (when (contains? (-> s :mode :move-range) tile)
-      ;{:input tile})))
-      ; XXX return-from
-      (assoc-in s [:mode :move-to-tile] tile))))
+(defn pitch-select [s]
+  (if-let [player (at-tile s (:cursor s))]
+    (-> s
+        (mode-into player-select-mode player)
+        (expect-return (fn [s* tile]
+                         (debug-log "player should move to " tile)
+                         (assoc-in s* [:mode :move-to-tile] tile))
+                       tile-input-mode :player-move (player-range player (:pitch s))))
+    nil))
 
 (declare player-select-mode-handlers)
 (defn player-select-mode [s player]
   {:name :player-select
    :handlers player-select-mode-handlers
    :player player
-   :move-to-tile nil
-   :move-range (player-range player (:pitch s))})
+   :move-to-tile nil})
 
 ;; ### kick
 
@@ -266,15 +292,34 @@
                           :escape game-done
                           \q game-done})
 
+;; This will become a menu ... 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
-                                  \m player-move-mode
                                   \k maybe-player-kick-mode
                                   :enter player-turn-commit
                                   :escape mode-done
                                   \q mode-done})
+
+(defn return-tile-input [s]
+  (let [tile (:cursor s)]
+    (when (contains? (-> s :mode :tile-range) tile)
+      (return s tile))))
+
+(declare tile-input-handlers)
+(defn tile-input-mode [s mode-name tile-range]
+  {:name mode-name
+   :tile-range tile-range
+   :handlers tile-input-handlers})
+
+(def tile-input-handlers {:left pitch-cursor-left
+                          :right pitch-cursor-right
+                          :up pitch-cursor-up
+                          :down pitch-cursor-down
+                          :enter return-tile-input
+                          :escape mode-done
+                          \q mode-done})
 
 (def player-kick-mode-handlers {:left pitch-cursor-left
                                 :right pitch-cursor-right
@@ -289,7 +334,8 @@
    :handlers pitch-mode-handlers})
 
 (defn make-state []
-  {:cursor [0 0]})
+  {:cursor [0 0]
+   :returns (list)})
 
 ;; Location utils
 (def formations
