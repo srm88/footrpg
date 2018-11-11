@@ -362,7 +362,9 @@
 (defn player-info-menu [s]
   (let [player (get-in s [:mode :player])]
     (mode-into s menu-mode :player-info-menu [{:text "Foobar"
-                                               :fn (fn [s] s)}])))
+                                               :fn (fn [s] s)}
+                                              {:text "So sick"
+                                               :fn (constantly s)}])))
 
 (defn maybe-player-kick-mode [s]
   ;; XXX need a better approach for factoring hypothetical actions into

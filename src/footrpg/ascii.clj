@@ -50,6 +50,35 @@
             from
             path)))
 
+(defn draw-border [[x y] width height]
+  (s/put-string screen (dec x) (dec y) (str "." (apply str (repeat width "~")) "."))
+  (doseq [y* (range height)]
+    (s/put-string screen (dec x) (+ y y*) "|")
+    (s/put-string screen (+ x width) (+ y y*) "|"))
+  (s/put-string screen (dec x) (+ y height) (str "'" (apply str (repeat width "~")) "'")))
+
+(defn r-pad-to [s length]
+  ;; New string will be padded on the right with spaces until it has length `length`
+  (let [trimmed (f/subs* s length)
+        padding (apply str (-> (dec length)
+                               (- (count trimmed))
+                               (repeat " ")))]
+    (str trimmed padding)))
+
+(defn draw-menu [s menu]
+  (let [width 25
+        start-x 10
+        start-y 5
+        border? true
+        lines (->> (:menu menu)
+                   (map :text)
+                   (map #(r-pad-to % width))
+                   (map-indexed (fn [idx line]
+                                  (str (if (= idx (:cursor menu)) ">" " ") line))))]
+    (draw-border [start-x start-y] width (count lines))
+    (doseq [[idx line] (map-indexed vector lines)]
+      (s/put-string screen start-x (+ start-y idx) line))))
+
 (defn draw-player [s player]
   (let [color (get-in s [:game :teams (:team player) :color])
         glyph (player-glyph player)]
@@ -75,6 +104,8 @@
     (draw-player s player))
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
     (s/move-cursor screen curs-x curs-y))
+  (when (contains? (:mode s) :menu)
+    (draw-menu s (:mode s)))
   (put-pitch (:pitch s) (-> s :game :entities :ball :tile ) ball-glyph)
   (s/put-string screen 0 (-> s :pitch :height inc inc) (apply str (repeat 80 " ")))
   (s/put-string screen 0 (-> s :pitch :height inc inc) (str "> " (:status-line s)))
