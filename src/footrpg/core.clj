@@ -296,13 +296,18 @@
                  (reduce act s actions)
                  s))))
 
+(defn move-player [s player]
+  (expect-return s (fn [s* tile]
+                     (-> s*
+                         (update-in [:mode :player] move tile)
+                         (update-in [:mode :actions] conj (player-move-action player tile))))
+                 tile-input-mode :player-move (player-range player (:pitch s))))
+
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
     (-> s
         (mode-into player-select-mode player)
-        (expect-return (fn [s* tile]
-                         (update-in s* [:mode :actions] conj (player-move-action player tile)))
-                       tile-input-mode :player-move (player-range player (:pitch s))))
+        (move-player player))
     nil))
 
 (declare player-select-mode-handlers)
@@ -319,12 +324,11 @@
 ;; ### kick
 (defn maybe-player-move-mode [s]
   (when (not (action-taken (:mode s) :move))
-    (let [player (get-in s [:mode :player])]
-      (expect-return s (fn [s* tile]
-                         (update-in s* [:mode :actions] conj (player-move-action player tile)))
-                     tile-input-mode :player-move (player-range player (:pitch s))))))
+    (move-player s (get-in s [:mode :player]))))
 
 (defn maybe-player-kick-mode [s]
+  ;; XXX need a better approach for factoring hypothetical actions into
+  ;; our interrogation of the game state
   (let [ball (get-in s [:game :entities :ball])
         ball-tile (:tile ball)
         player (get-in s [:mode :player])
@@ -332,7 +336,9 @@
     (when (and (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
                (not (action-taken (:mode s) :kick)))
       (expect-return s (fn [s* tile]
-                         (update-in s* [:mode :actions] conj (player-kick-action player ball tile)))
+                         (-> s*
+                             (update-in [:mode :ball] move tile)
+                             (update-in [:mode :actions] conj (player-kick-action player ball tile))))
                      tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
 
 (def pitch-mode-handlers {:left pitch-cursor-left
