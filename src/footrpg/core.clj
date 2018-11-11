@@ -238,13 +238,14 @@
       (update :returns conj value)
       mode-done))
 
-;; Bad
-      ;(update-in s [:game :entities :ball] move tile))))
+;; updating player and ball in place?
 (defn player-turn-commit [s]
-  (let [m (:mode s)]
+  (let [m (:mode s)
+        player (:player m)
+        ball (:ball m)]
     (mode-done (cond-> s
-                 (some? (:move-to-tile m)) (update-in [:game :entities (player-key s (-> s :mode :player))] move (:move-to-tile m))
-                 (some? (:kick-to-tile m)) (update-in [:game :entities :ball] move (:kick-to-tile m))))))
+                 (some? (:move-to-tile m)) (assoc-in [:game :entities (player-key s player)] player)
+                 (some? (:kick-to-tile m)) (assoc-in [:game :entities :ball] ball)))))
 
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
@@ -252,7 +253,9 @@
         (mode-into player-select-mode player)
         (expect-return (fn [s* tile]
                          (debug-log "player should move to " tile)
-                         (assoc-in s* [:mode :move-to-tile] tile))
+                         (-> s*
+                             (update-in [:mode :player] move tile)
+                             (assoc-in [:mode :move-to-tile] tile)))
                        tile-input-mode :player-move (player-range player (:pitch s))))
     nil))
 
@@ -261,6 +264,7 @@
   {:name :player-select
    :handlers player-select-mode-handlers
    :player player
+   :ball (get-in s [:game :entities :ball])
    :move-to-tile nil
    :kick-to-tile nil})
 
@@ -272,7 +276,9 @@
     (when (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
       (expect-return s (fn [s* tile]
                          (debug-log "player should kick to " tile)
-                         (assoc-in s* [:mode :kick-to-tile] tile))
+                         (-> s*
+                             (update-in [:mode :ball] move tile)
+                             (assoc-in [:mode :kick-to-tile] tile)))
                      tile-input-mode :player-kick (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))))))
 
 (def pitch-mode-handlers {:left pitch-cursor-left
