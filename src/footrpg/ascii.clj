@@ -40,13 +40,15 @@
     (s/put-string screen 0 i line))
   (when (= (-> s :mode :name) :player-move)
     (doseq [tile (-> s :mode :tile-range)]
-      (if (-> s :mode :move-to-tile (= tile))
-        (put-pitch (:pitch s) tile "[]" {:bg :cyan :fg :white})
-        (put-pitch (:pitch s) tile "  " {:bg :cyan :fg :cyan}))))
-  (doseq [tile (-> s :mode :kick-range)]
-    (if (-> s :mode :move-to-tile (= tile))
-      (put-pitch (:pitch s) tile "[]" {:bg :magenta :fg :white})
+      (put-pitch (:pitch s) tile "  " {:bg :cyan :fg :cyan})))
+  ;; XXX: show kick-to-tile, move-to-tile
+  (when (= (-> s :mode :name) :player-kick)
+    (doseq [tile (-> s :mode :tile-range)]
       (put-pitch (:pitch s) tile "  " {:bg :magenta :fg :magenta})))
+  (when-let [move-to (get-in s [:mode :move-to-tile])]
+    (put-pitch (:pitch s) move-to "[]" {:bg :cyan :fg :white}))
+  (when-let [kick-to (get-in s [:mode :kick-to-tile])]
+    (put-pitch (:pitch s) kick-to ball-glyph {:bg :magenta :fg :white}))
   (doseq [player (f/players s)]
     (draw-player s player))
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
