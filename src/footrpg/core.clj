@@ -181,6 +181,7 @@
 
 (declare pitch-mode)
 (declare player-select-mode)
+(declare maybe-player-move-mode)
 (declare maybe-player-kick-mode)
 (declare player-turn-commit)
 (declare tile-input-mode)
@@ -269,6 +270,16 @@
    :kick-to-tile nil})
 
 ;; ### kick
+(defn maybe-player-move-mode [s]
+  (when (nil? (get-in s [:mode :move-to-tile]))
+    (let [player (get-in s [:mode :player])]
+      (expect-return s (fn [s* tile]
+                         (debug-log "player should move to " tile)
+                         (-> s*
+                             (update-in [:mode :player] move tile)
+                             (assoc-in [:mode :move-to-tile] tile)))
+                     tile-input-mode :player-move (player-range player (:pitch s))))))
+
 (defn maybe-player-kick-mode [s]
   (let [ball-tile (get-in s [:game :entities :ball :tile])
         player (get-in s [:mode :player])
@@ -295,6 +306,7 @@
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
                                   \k maybe-player-kick-mode
+                                  \m maybe-player-move-mode
                                   :enter player-turn-commit
                                   :escape mode-done
                                   \q mode-done})
