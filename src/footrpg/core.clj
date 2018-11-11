@@ -51,6 +51,15 @@
    :vect nil
    :tile []})
 
+(def up [0 -1])
+(def down [0 1])
+(def left [-1 0])
+(def right [1 0])
+(def up-left [-1 -1])
+(def up-right [1 -1])
+(def down-left [-1 1])
+(def down-right [1 1])
+
 (defn add-vect [[x y] [dx dy]]
   [(+ x dx) (+ y dy)])
 
@@ -62,6 +71,32 @@
 
 (defn levenshtein [[x y] [x* y*]]
   (+ (Math/abs (- x x*)) (Math/abs (- y y*))))
+
+(defn path* [from to]
+  (let [lev (levenshtein from to)
+        ;; Want to minimize score
+        score (fn [tile step] (levenshtein (add-vect tile step) to))
+        options [up down left right up-left up-right down-left down-right]]
+    (loop [tile from
+           acc []]
+      (if (= tile to)
+        acc
+        (let [step (first (sort-by #(score tile %) options))]
+          (recur (add-vect tile step) (conj acc step)))))))
+
+(defn path [from to]
+  (let [[x y] (subtract-vect to from)
+        horiz (if (>= x 0) right left)
+        verti (if (>= y 0) down up)
+        x* (Math/abs x)
+        y* (Math/abs y)
+        horizontals (repeat x* horiz)
+        verticals (repeat y* verti)
+        steps (cond-> (interleave horizontals verticals)
+                (not= x* y*) (concat (if (> x* y*)
+                                       (repeat (- x* y*) horiz)
+                                       (repeat (- y* x*) verti))))]
+    (into [] steps)))
 
 (defn move [thing tile]
   (-> thing
@@ -110,11 +145,6 @@
 
 (defn at-tile [s tile]
   (->> s players (filter #(= tile (:tile %))) first))
-
-(def up [0 -1])
-(def down [0 1])
-(def left [-1 0])
-(def right [1 0])
 
 (defn in-bounds? [[x y] pitch]
   (and (>= x 0) (< x (dec (:width pitch)))
@@ -245,8 +275,8 @@
         player (:player m)
         ball (:ball m)]
     (mode-done (cond-> s
-                 (some? (:move-to-tile m)) (assoc-in [:game :entities (player-key s player)] player)
-                 (some? (:kick-to-tile m)) (assoc-in [:game :entities :ball] ball)))))
+                 (some? (:player-move m)) (assoc-in [:game :entities (player-key s player)] player)
+                 (some? (:ball-move m)) (assoc-in [:game :entities :ball] ball)))))
 
 (defn pitch-select [s]
   (if-let [player (at-tile s (:cursor s))]
@@ -255,8 +285,8 @@
         (expect-return (fn [s* tile]
                          (debug-log "player should move to " tile)
                          (-> s*
-                             (update-in [:mode :player] move tile)
-                             (assoc-in [:mode :move-to-tile] tile)))
+                             (assoc-in [:mode :player-move] [(:tile player) tile])
+                             (update-in [:mode :player] move tile)))
                        tile-input-mode :player-move (player-range player (:pitch s))))
     nil))
 
@@ -266,18 +296,18 @@
    :handlers player-select-mode-handlers
    :player player
    :ball (get-in s [:game :entities :ball])
-   :move-to-tile nil
-   :kick-to-tile nil})
+   :player-move nil
+   :ball-move nil})
 
 ;; ### kick
 (defn maybe-player-move-mode [s]
-  (when (nil? (get-in s [:mode :move-to-tile]))
+  (when (nil? (get-in s [:mode :player-move]))
     (let [player (get-in s [:mode :player])]
       (expect-return s (fn [s* tile]
                          (debug-log "player should move to " tile)
                          (-> s*
-                             (update-in [:mode :player] move tile)
-                             (assoc-in [:mode :move-to-tile] tile)))
+                             (assoc-in [:mode :player-move] [(:tile player) tile])
+                             (update-in [:mode :player] move tile)))
                      tile-input-mode :player-move (player-range player (:pitch s))))))
 
 (defn maybe-player-kick-mode [s]
@@ -288,8 +318,8 @@
       (expect-return s (fn [s* tile]
                          (debug-log "player should kick to " tile)
                          (-> s*
-                             (update-in [:mode :ball] move tile)
-                             (assoc-in [:mode :kick-to-tile] tile)))
+                             (assoc-in [:mode :ball-move] [ball-tile tile])
+                             (update-in [:mode :ball] move tile)))
                      tile-input-mode :player-kick (player-kick-range player (get-in s [:game :entities :ball]) (:pitch s))))))
 
 (def pitch-mode-handlers {:left pitch-cursor-left

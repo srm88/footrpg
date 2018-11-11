@@ -30,6 +30,28 @@
   (let [[x y] (transpose-tile tile pitch)]
     (apply s/put-string screen x y args)))
 
+(defn vector-glyph [v]
+  (condp = v
+    f/up "| "
+    f/down "| "
+    f/left "--"
+    f/right "--"
+    f/up-left "'."
+    f/up-right ".'"
+    f/down-left ".'"
+    f/down-right "'."))
+
+(defn draw-vector [s from to color]
+  (let [path (f/path* from to)]
+    (debug-log "path from " from " to " to " is " path)
+    (reduce (fn [tile step]
+              (let [next-tile (f/add-vect tile step)]
+                (debug-log "draw-vector " from " -> " to " : tile " tile " step " step)
+                (put-pitch (:pitch s) next-tile (vector-glyph step) color)
+                next-tile))
+            from
+            path)))
+
 (defn draw-player [s player]
   (let [color (get-in s [:game :teams (:team player) :color])
         glyph (player-glyph player)]
@@ -45,10 +67,12 @@
   (when (= (-> s :mode :name) :player-kick)
     (doseq [tile (-> s :mode :tile-range)]
       (put-pitch (:pitch s) tile "  " {:bg :magenta :fg :magenta})))
-  (when-let [move-to (get-in s [:mode :move-to-tile])]
-    (put-pitch (:pitch s) move-to "[]" {:bg :cyan :fg :white}))
-  (when-let [kick-to (get-in s [:mode :kick-to-tile])]
-    (put-pitch (:pitch s) kick-to ball-glyph {:bg :magenta :fg :white}))
+  (when-let [[player-from player-to] (get-in s [:mode :player-move])]
+    (draw-vector s player-from player-to {:bg :cyan :fg :white})
+    (put-pitch (:pitch s) player-to "[]" {:bg :cyan :fg :white}))
+  (when-let [[ball-from ball-to] (get-in s [:mode :ball-move])]
+    (draw-vector s ball-from ball-to {:bg :magenta :fg :white})
+    (put-pitch (:pitch s) ball-to ball-glyph {:bg :magenta :fg :white}))
   (doseq [player (f/players s)]
     (draw-player s player))
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
