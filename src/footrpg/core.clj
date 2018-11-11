@@ -302,7 +302,7 @@
 (defn menu-select [s]
   (let [m (:mode s)
         item (nth (:menu m) (:cursor m))]
-    ((:fn item) s)))
+    (when-let [f (:fn item)] (f s))))
 
 (declare menu-mode-handlers)
 (defn menu-mode [s mode-name menu-opts]
@@ -359,12 +359,16 @@
   (when (not (action-taken (:mode s) :move))
     (move-player s (get-in s [:mode :player]))))
 
-(defn player-info-menu [s]
-  (let [player (get-in s [:mode :player])]
-    (mode-into s menu-mode :player-info-menu [{:text "Foobar"
-                                               :fn (fn [s] s)}
-                                              {:text "So sick"
-                                               :fn (constantly s)}])))
+(defn player-info-menu [s player]
+  (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
+                                                 (str "Acc " (:quick player))]
+                                                (map #(hash-map :text %)))))
+
+(defn players-info-menu [s]
+  (mode-into s menu-mode :players-info-menu
+             (->> (players s)
+                  (map #(hash-map :text (str (:name %) " #" (:number %))
+                                  :fn (fn [s*] (player-info-menu s* %)))))))
 
 (defn maybe-player-kick-mode [s]
   ;; XXX need a better approach for factoring hypothetical actions into
@@ -385,6 +389,7 @@
                           :right pitch-cursor-right
                           :up pitch-cursor-up
                           :down pitch-cursor-down
+                          \i players-info-menu
                           :enter pitch-select
                           :escape game-done
                           \q game-done})
@@ -395,8 +400,8 @@
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
                                   \k maybe-player-kick-mode
+                                  \i #(player-info-menu % (get-in % [:mode :player]))
                                   \m maybe-player-move-mode
-                                  \i player-info-menu
                                   :enter player-turn-commit
                                   :escape mode-done
                                   \q mode-done})
