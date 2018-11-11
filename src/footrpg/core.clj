@@ -147,10 +147,12 @@
   (and (>= x 0) (< x (dec (:width pitch)))
        (>= y 0) (< y (dec (:height pitch)))))
 
-(defn bounded [[x y] pitch]
-  [(-> x (max 0) (min (dec (:width pitch))))
-   (-> y (max 0) (min (dec (:height pitch))))])
+(defn bounded* [x limit]
+  (-> x (max 0) (min (dec limit))))
 
+(defn bounded [[x y] pitch]
+  [(bounded* x (:width pitch))
+   (bounded* y (:height pitch))])
 
 (defn adjacent [tile pitch]
   (->> [up down left right]
@@ -207,6 +209,7 @@
 (def game-done (constantly :game-done))
 
 (declare pitch-mode)
+(declare menu-mode)
 (declare player-select-mode)
 (declare maybe-player-move-mode)
 (declare maybe-player-kick-mode)
@@ -286,6 +289,36 @@
           :from (:tile ball)
           :to to}})
 
+(defn menu-cursor-up [s]
+  (-> s
+      (update-in [:mode :cursor] dec)
+      (update-in [:mode :cursor] bounded* (-> s :mode :menu count))))
+
+(defn menu-cursor-down [s]
+  (-> s
+      (update-in [:mode :cursor] inc)
+      (update-in [:mode :cursor] bounded* (-> s :mode :menu count))))
+
+(defn menu-select [s]
+  (let [m (:mode s)
+        item (nth (:menu m) (:cursor m))]
+    ((:fn item) s)))
+
+(declare menu-mode-handlers)
+(defn menu-mode [s mode-name menu-opts]
+  {:name mode-name
+   :cursor 0
+   ;; how can we return from a menu?
+   ;; list of {:text, :fn}
+   :menu menu-opts
+   :handlers menu-mode-handlers})
+
+(def menu-mode-handlers {:down menu-cursor-down
+                         :up menu-cursor-up
+                         :enter menu-select
+                         :escape mode-done
+                         \q mode-done})
+
 (defn player-turn-commit [s]
   (let [m (:mode s)
         player (:player m)
@@ -326,6 +359,11 @@
   (when (not (action-taken (:mode s) :move))
     (move-player s (get-in s [:mode :player]))))
 
+(defn player-info-menu [s]
+  (let [player (get-in s [:mode :player])]
+    (mode-into s menu-mode :player-info-menu [{:text "Foobar"
+                                               :fn (fn [s] s)}])))
+
 (defn maybe-player-kick-mode [s]
   ;; XXX need a better approach for factoring hypothetical actions into
   ;; our interrogation of the game state
@@ -356,6 +394,7 @@
                                   :down pitch-cursor-down
                                   \k maybe-player-kick-mode
                                   \m maybe-player-move-mode
+                                  \i player-info-menu
                                   :enter player-turn-commit
                                   :escape mode-done
                                   \q mode-done})
