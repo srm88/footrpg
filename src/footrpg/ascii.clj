@@ -56,7 +56,10 @@
                                (repeat " ")))]
     (str trimmed padding)))
 
-(defmulti render (fn [s thing] (:render thing)))
+(defmulti render (fn [s thing]
+                   (cond
+                     (contains? thing :tile-range) :range
+                     :else (:render thing))))
 
 (defmethod render :menu [s thing]
   (let [menu (:menu thing)
@@ -89,8 +92,12 @@
     (put-pitch (:pitch s) to glyph color)))
 
 (defmethod render :range [s thing]
-  (let [tiles (:tiles thing)
-        color (:color thing)]
+  (let [tiles (:tile-range thing)
+        color (let [c (case (:name thing)
+                        :player-move :cyan
+                        :player-kick :magenta
+                        :blue)]
+                {:fg c :bg c})]
     (doseq [tile tiles]
       (put-pitch (:pitch s) tile "  " color))))
 
@@ -100,19 +107,15 @@
         glyph (player-glyph player)]
     (put-pitch (:pitch s) (:tile player) (str glyph) color)))
 
+(defmethod render :default [s thing] nil)
+
 (defn redraw [s]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
 
-  (when (= (-> s :mode :name) :player-move)
-    (render s {:render :range
-               :tiles (-> s :mode :tile-range)
-               :color {:bg :cyan :fg :cyan}}))
-
-  (when (= (-> s :mode :name) :player-kick)
-    (render s {:render :range
-               :tiles (-> s :mode :tile-range)
-               :color {:bg :magenta :fg :magenta}}))
+  ;; XXX this hand-done ordering determines which things render on top --
+  ;; should build z-index instead
+  (render s (:mode s))
 
   ;; XXX multimethod for previewing actions
   (doseq [player-move (->> (f/action-taken (:mode s) :move) (map :move))]
