@@ -20,16 +20,12 @@
   [(-> x (* 2) inc)
    (inc y)])
 
-(defn player-glyph [player]
-  (let [[num-first num-second] (str (:number player))]
-    (str num-first (or num-second " "))))
-
-(def ball-glyph "@")
-
 (defn put-pitch [pitch tile & args]
   (let [[x y] (transpose-tile tile pitch)]
     (apply s/put-string screen x y args)))
 
+;; XXX consider drawing these glyphs on only one of the two columns for the
+;; tile so that we can show two vectors at the same time
 (defn vector-glyph [v]
   (condp = v
     f/up "| "
@@ -56,45 +52,86 @@
                                (repeat " ")))]
     (str trimmed padding)))
 
-(defmulti render (fn [s thing]
-                   (cond
-                     (contains? thing :tile-range) :range
-                     (= (:kind thing) :player) :player
-                     :else (:render thing))))
+(defmulti glyph (fn [s thing]
+                  (cond
+                    (= (:kind thing) :player) :player
+                    (= (:kind thing) :ball) :ball)))
 
-(defmethod render :menu [s thing]
-  (let [menu (:menu thing)
-        width 25
+(defmethod glyph :player [s player]
+  (let [[num-first num-second] (str (:number player))]
+    (str num-first (or num-second " "))))
+
+(defmethod glyph :ball [s ball]
+  "@ ")
+
+(defmulti color (fn [s thing]
+                  (cond
+                    (= (:kind thing) :player) :player
+                    (= (:kind thing) :ball) :ball)))
+
+(defmethod color :player [s player]
+  (get-in s [:game :teams (:team player) :color]))
+
+(defmethod color :ball [s ball]
+  {:bg :magenta :fg :white})
+
+(defn renderables [s]
+  (concat [(:mode s)]
+          (get-in s [:mode :actions])
+          (-> s :game :entities vals)))
+
+;; Used for render and z-index
+(defn render-kind [s thing]
+  (cond
+    (contains? thing :tile-range) :range
+    (contains? thing :menu) :menu
+    (= (:kind thing) :player) :simple-entity
+    (= (:kind thing) :ball) :simple-entity
+    (and (= (:kind thing) :action)
+         (= (:action thing) :move)) :move
+    :else (:render thing)))
+
+(defmulti z-index render-kind)
+(defmethod z-index :range [s mode] 1)
+(defmethod z-index :menu [s mode] 100)
+(defmethod z-index :simple-entity [s entity] (if (= (:kind entity) :ball) 10 5))
+(defmethod z-index :move [s mode] 2)
+(defmethod z-index :default [s _] 0)
+
+(defmulti render render-kind)
+
+;; XXX actions and modes should render themselves and contribute their sub-renderables
+(defmethod render :menu [s mode]
+  (let [width 25
         start-x 10
         start-y 5
         border? true
-        lines (->> (:menu menu)
+        lines (->> (:menu mode)
                    (map :text)
                    (map #(r-pad-to % width))
                    (map-indexed (fn [idx line]
-                                  (str (if (= idx (:cursor menu)) ">" " ") line))))]
+                                  (str (if (= idx (:cursor mode)) ">" " ") line))))]
     (draw-border [start-x start-y] width (count lines))
     (doseq [[idx line] (map-indexed vector lines)]
       (s/put-string screen start-x (+ start-y idx) line))))
 
-(defmethod render :vector [s thing]
-  (let [from (:from thing)
-        to (:to thing)
-        glyph (:glyph thing)
-        color {:fg :white
-               :bg :cyan}
-        path (f/path* from to)]
+(defmethod render :move [s action]
+  (let [m (:move action)
+        entity (get-in s [:game :entities (:entity m)])
+        glyph (glyph s entity)
+        color (color s entity)
+        path (f/path* (:from m) (:to m))]
     (reduce (fn [tile step]
               (let [next-tile (f/add-vect tile step)]
                 (put-pitch (:pitch s) next-tile (vector-glyph step) color)
                 next-tile))
-            from
+            (:from m)
             path)
-    (put-pitch (:pitch s) to glyph color)))
+    (put-pitch (:pitch s) (:to m) glyph color)))
 
-(defmethod render :range [s thing]
-  (let [tiles (:tile-range thing)
-        color (let [c (case (:name thing)
+(defmethod render :range [s mode]
+  (let [tiles (:tile-range mode)
+        color (let [c (case (:name mode)
                         :player-move :cyan
                         :player-kick :magenta
                         :blue)]
@@ -102,48 +139,21 @@
     (doseq [tile tiles]
       (put-pitch (:pitch s) tile "  " color))))
 
-(defmethod render :player [s player]
-  (let [color (get-in s [:game :teams (:team player) :color])
-        glyph (player-glyph player)]
-    (put-pitch (:pitch s) (:tile player) (str glyph) color)))
+(defmethod render :simple-entity [s entity]
+  (put-pitch (:pitch s) (:tile entity) (glyph s entity) (color s entity)))
 
 (defmethod render :default [s thing] nil)
-
-(defn renderables [s]
-  (concat [(:mode s)]
-          (f/players s)))
 
 (defn redraw [s]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
 
-  ;; XXX this hand-done ordering determines which things render on top --
-  ;; should build z-index instead
-  (->> (renderables s) (map #(render s %)) doall)
+  (->> (renderables s) (sort-by #(z-index s %)) (map #(render s %)) doall)
 
-  ;; XXX multimethod for previewing actions
-  (doseq [player-move (->> (f/action-taken (:mode s) :move) (map :move))]
-    (render s {:render :vector
-               :from (:from player-move)
-               :to (:to player-move)
-               :glyph "[]"
-               :color {:bg :cyan :fg :white}}))
-
-  (when-let [ball-move (:move (first (f/action-taken (:mode s) :kick)))]
-    (render s {:render :vector
-               :from (:from ball-move)
-               :to (:to ball-move)
-               :glyph ball-glyph
-               :color {:bg :magenta :fg :white}}))
-
+  ;; XXX the cursor should become mode-local state and render as a part of
+  ;; pertinent modes
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
     (s/move-cursor screen curs-x curs-y))
-
-  (when (contains? (:mode s) :menu)
-    (render s {:render :menu
-               :menu (:mode s)}))
-
-  (put-pitch (:pitch s) (-> s :game :entities :ball :tile ) ball-glyph)
 
   (s/put-string screen 0 (-> s :pitch :height inc inc) (apply str (repeat 80 " ")))
   (s/put-string screen 0 (-> s :pitch :height inc inc) (str "> " (:status-line s)))
