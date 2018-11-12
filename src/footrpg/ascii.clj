@@ -59,6 +59,7 @@
 (defmulti render (fn [s thing]
                    (cond
                      (contains? thing :tile-range) :range
+                     (= (:kind thing) :player) :player
                      :else (:render thing))))
 
 (defmethod render :menu [s thing]
@@ -101,13 +102,16 @@
     (doseq [tile tiles]
       (put-pitch (:pitch s) tile "  " color))))
 
-(defmethod render :player [s thing]
-  (let [player (:player thing)
-        color (get-in s [:game :teams (:team player) :color])
+(defmethod render :player [s player]
+  (let [color (get-in s [:game :teams (:team player) :color])
         glyph (player-glyph player)]
     (put-pitch (:pitch s) (:tile player) (str glyph) color)))
 
 (defmethod render :default [s thing] nil)
+
+(defn renderables [s]
+  (concat [(:mode s)]
+          (f/players s)))
 
 (defn redraw [s]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
@@ -115,7 +119,7 @@
 
   ;; XXX this hand-done ordering determines which things render on top --
   ;; should build z-index instead
-  (render s (:mode s))
+  (->> (renderables s) (map #(render s %)) doall)
 
   ;; XXX multimethod for previewing actions
   (doseq [player-move (->> (f/action-taken (:mode s) :move) (map :move))]
@@ -131,10 +135,6 @@
                :to (:to ball-move)
                :glyph ball-glyph
                :color {:bg :magenta :fg :white}}))
-
-  (doseq [player (f/players s)]
-    (render s {:render :player
-               :player player}))
 
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
     (s/move-cursor screen curs-x curs-y))
