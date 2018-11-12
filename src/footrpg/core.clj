@@ -421,8 +421,8 @@
                          \p players-info-menu
                          :enter control-player
                          \g (fn [s] (-> s commit-actions next-turn))
-                         :escape game-done
-                         \q game-done})
+                         :escape mode-done
+                         \q mode-done})
 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
