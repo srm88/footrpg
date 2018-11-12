@@ -173,8 +173,6 @@
                               (add-vect tile left)
                               (add-vect tile right))))))))
 
-;; This is now meta-game
-
 (defn pitch-cursor-left [s]
   (-> s
       (update-in [:cursor 0] dec)
@@ -194,8 +192,6 @@
   (-> s
       (update-in [:cursor 1] inc)
       (update :cursor bounded (:pitch s))))
-
-;; Only returns players for now
 
 (def game-done (constantly :game-done))
 
@@ -234,21 +230,14 @@
 (defn set-status-line [s]
   (assoc s :status-line (dump-modes s)))
 
-(defn mode-into* [s mode]
+(defn mode-into [s mode-fn & args]
   (-> s
       (update :modes conj (:mode s))
-      (assoc :mode mode)
+      (assoc :mode (apply mode-fn s args)
       set-status-line))
 
-;; Sugar
-(defn mode-into [s mode-fn & args]
-  (mode-into* s (apply mode-fn s args)))
-
-(defn expect-return* [s handler]
-  (assoc-in s [:mode :return-handler] handler))
-
 (defn expect-return [s handler mode-fn & args]
-  (apply mode-into (expect-return* s handler)
+  (apply mode-into (assoc-in s [:mode :return-handler] handler)
                    mode-fn args))
 
 (defn mode-done [s]
@@ -347,6 +336,23 @@
    :actions-by-player {}
    :actions []})
 
+(defn player-info-menu [s player]
+  (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
+                                                 (str "Acc " (:quick player))]
+                                                (map #(hash-map :text %)))))
+
+(defn players-info-menu [s]
+  (mode-into s menu-mode :players-info-menu
+             (->> (players s)
+                  (map #(hash-map :text (str (:name %) " #" (:number %))
+                                  :fn (fn [s*] (player-info-menu s* %)))))))
+
+;; XXX multimethod for tile-info
+(defn tile-info-menu [s]
+  (when-let [player (at-tile s (:cursor s))]
+    (player-info-menu s player)))
+
+
 (defn return-actions [s]
   ;; XXX confirmation menu
   (return s (get-in s [:mode :actions])))
@@ -385,35 +391,19 @@
    :ball (get-in s [:game :entities :ball])
    :actions []})
 
-;; ### kick
 (defn maybe-player-move-mode [s]
   (when (not (action-taken (:mode s) :move))
     (move-player s (get-in s [:mode :player]))))
-
-(defn player-info-menu [s player]
-  (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
-                                                 (str "Acc " (:quick player))]
-                                                (map #(hash-map :text %)))))
-
-(defn players-info-menu [s]
-  (mode-into s menu-mode :players-info-menu
-             (->> (players s)
-                  (map #(hash-map :text (str (:name %) " #" (:number %))
-                                  :fn (fn [s*] (player-info-menu s* %)))))))
-
-;; XXX multimethod for tile-info
-(defn tile-info-menu [s]
-  (when-let [player (at-tile s (:cursor s))]
-    (player-info-menu s player)))
 
 (defn maybe-player-kick-mode [s]
   ;; XXX need a better approach for factoring hypothetical actions into
   ;; our interrogation of the game state
   (let [ball (get-in s [:game :entities :ball])
-        ball-tile (:tile ball)
-        player (get-in s [:mode :player])
-        player-tile (:tile player)]
-    (when (and (-> ball-tile (subtract-vect player-tile) magnitude (< 2))
+        player (get-in s [:mode :player])]
+    (when (and (-> (:tile ball)
+                   (subtract-vect (:tile player))
+                   magnitude
+                   (< 2))
                (not (action-taken (:mode s) :kick)))
       (expect-return s (fn [s* tile]
                          (-> s*
@@ -432,7 +422,6 @@
                          :escape game-done
                          \q game-done})
 
-;; This will become a menu ... 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
                                   :up pitch-cursor-up
