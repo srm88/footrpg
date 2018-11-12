@@ -208,8 +208,9 @@
 
 (def game-done (constantly :game-done))
 
-(declare pitch-mode)
 (declare menu-mode)
+(declare turn-mode)
+(declare tile-info-menu)
 (declare player-select-mode)
 (declare maybe-player-move-mode)
 (declare maybe-player-kick-mode)
@@ -241,17 +242,21 @@
 (defn set-status-line [s]
   (assoc s :status-line (dump-modes s)))
 
+(defn mode-into* [s mode]
+  (-> s
+      (update :modes conj (:mode s))
+      (assoc :mode mode)
+      set-status-line))
+
+;; Sugar
 (defn mode-into [s mode-fn & args]
-  (let [current (:mode s)
-        mode (apply mode-fn s args)]
-    (-> s
-        (update :modes conj current)
-        (assoc :mode mode)
-        set-status-line)))
+  (mode-into* s (apply mode-fn s args)))
+
+(defn expect-return* [s handler]
+  (assoc-in s [:mode :return-handler] handler))
 
 (defn expect-return [s handler mode-fn & args]
-  (debug-log "expecting return in mode " (-> s :mode :name))
-  (apply mode-into (assoc-in s [:mode :return-handler] handler)
+  (apply mode-into (expect-return* s handler)
                    mode-fn args))
 
 (defn mode-done [s]
@@ -268,11 +273,14 @@
       (update :returns conj value)
       mode-done))
 
-;; Multimethod?
+;; XXX multimethod for actions
 (defn act [s action]
   (if-let [m (:move action)]
     (update-in s [:game :entities (:entity m)] move (:to m))
     s))
+
+(defn action-taken [mode action-kind]
+  (seq (filter #(= (:action %) action-kind) (:actions mode))))
 
 (defn player-move-action [player to]
   {:kind :action
@@ -319,15 +327,23 @@
                          :escape mode-done
                          \q mode-done})
 
-(defn player-turn-commit [s]
-  (let [m (:mode s)
-        player (:player m)
-        ball (:ball m)
-        actions (:actions m)]
-    ;; Generic 'apply list of actions'
-    (mode-done (if (seq actions)
-                 (reduce act s actions)
-                 s))))
+(declare turn-mode-handlers)
+(defn turn-mode [s team-id]
+  {:name :turn-mode
+   :team team-id
+   :handlers turn-mode-handlers
+   :actions-by-player {}
+   :actions []})
+
+(defn return-actions [s]
+  ;; XXX confirmation menu
+  (return s (get-in s [:mode :actions])))
+
+(defn commit-actions [s]
+  ;; Generic 'apply list of actions'
+  (mode-done (if-let [actions (seq (get-in s [:mode :actions]))]
+               (reduce act s actions)
+               s)))
 
 (defn move-player [s player]
   (expect-return s (fn [s* tile]
@@ -336,11 +352,17 @@
                          (update-in [:mode :actions] conj (player-move-action player tile))))
                  tile-input-mode :player-move (player-range player (:pitch s))))
 
-(defn pitch-select [s]
+(defn control-player [s]
   (if-let [player (at-tile s (:cursor s))]
-    (-> s
-        (mode-into player-select-mode player)
-        (move-player player))
+    (if (= (:team player) (get-in s [:mode :team]))
+      (-> s
+          (expect-return (fn [s* actions]
+                           (let [actions-by-player (assoc (get-in s* [:mode :actions-by-player]) (:id player) actions)]
+                             (update s* :mode merge {:actions-by-player actions-by-player
+                                                     :actions (flatten (vals actions-by-player))})))
+                         player-select-mode player)
+          (move-player player))
+      (tile-info-menu s))
     nil))
 
 (declare player-select-mode-handlers)
@@ -350,9 +372,6 @@
    :player player
    :ball (get-in s [:game :entities :ball])
    :actions []})
-
-(defn action-taken [mode action-kind]
-  (seq (filter #(= (:action %) action-kind) (:actions mode))))
 
 ;; ### kick
 (defn maybe-player-move-mode [s]
@@ -370,6 +389,11 @@
                   (map #(hash-map :text (str (:name %) " #" (:number %))
                                   :fn (fn [s*] (player-info-menu s* %)))))))
 
+;; XXX multimethod for tile-info
+(defn tile-info-menu [s]
+  (when-let [player (at-tile s (:cursor s))]
+    (player-info-menu s player)))
+
 (defn maybe-player-kick-mode [s]
   ;; XXX need a better approach for factoring hypothetical actions into
   ;; our interrogation of the game state
@@ -385,14 +409,16 @@
                              (update-in [:mode :actions] conj (player-kick-action player ball tile))))
                      tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
 
-(def pitch-mode-handlers {:left pitch-cursor-left
-                          :right pitch-cursor-right
-                          :up pitch-cursor-up
-                          :down pitch-cursor-down
-                          \i players-info-menu
-                          :enter pitch-select
-                          :escape game-done
-                          \q game-done})
+(def turn-mode-handlers {:left pitch-cursor-left
+                         :right pitch-cursor-right
+                         :up pitch-cursor-up
+                         :down pitch-cursor-down
+                         \i tile-info-menu
+                         \p players-info-menu
+                         :enter control-player
+                         \g commit-actions
+                         :escape game-done
+                         \q game-done})
 
 ;; This will become a menu ... 
 (def player-select-mode-handlers {:left pitch-cursor-left
@@ -402,7 +428,7 @@
                                   \k maybe-player-kick-mode
                                   \i #(player-info-menu % (get-in % [:mode :player]))
                                   \m maybe-player-move-mode
-                                  :enter player-turn-commit
+                                  :enter return-actions
                                   :escape mode-done
                                   \q mode-done})
 
@@ -424,10 +450,6 @@
                           :enter return-tile-input
                           :escape mode-done
                           \q mode-done})
-
-(defn pitch-mode [s]
-  {:name :pitch
-   :handlers pitch-mode-handlers})
 
 (defn make-state []
   {:cursor [0 0]

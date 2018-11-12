@@ -13,7 +13,7 @@
               (assoc :modes (list))
               (assoc :game (f/init-game pitch))
               (assoc :cursor (f/pitch-center pitch)))]
-    (def state (assoc s :mode (f/pitch-mode s)))))
+    (def state (assoc s :mode (f/turn-mode s :home)))))
 
 (defn dispatcher [s input]
   (let [handlers (get-in s [:mode :handlers])
@@ -25,9 +25,7 @@
 
 (defn get-input [s]
   (if (seq (:returns s))
-    (do
-      (debug-log "Got a stored input: " (-> s :returns peek))
-      [{:kind :return :value (-> s :returns peek)} (update s :returns pop)])
+    [{:kind :return :value (-> s :returns peek)} (update s :returns pop)]
     [{:kind :key :value (ascii/input)} s]))
 
 (defn main-loop []

@@ -93,8 +93,8 @@
   (when (= (-> s :mode :name) :player-kick)
     (doseq [tile (-> s :mode :tile-range)]
       (put-pitch (:pitch s) tile "  " {:bg :magenta :fg :magenta})))
-  ;; XXX need a multimethod approach here to render each action
-  (when-let [player-move (:move (first (f/action-taken (:mode s) :move)))]
+  ;; XXX multimethod for previewing actions
+  (doseq [player-move (->> (f/action-taken (:mode s) :move) (map :move))]
     (draw-vector s (:from player-move) (:to player-move) {:bg :cyan :fg :white})
     (put-pitch (:pitch s) (:to player-move) "[]" {:bg :cyan :fg :white}))
   (when-let [ball-move (:move (first (f/action-taken (:mode s) :kick)))]
