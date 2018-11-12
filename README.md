@@ -2,6 +2,9 @@
 
 # TODO
 
-* menu systems
+* streamline turn input -- by default go through players
 * multimethod aspects for rendering
-* figure out how to make actions/choices from the previous mode continue to render
+* make actions/choices from the previous mode continue to render
+* the basic-est of physics
+* display everyone's momentums
+* multi-turn actions
