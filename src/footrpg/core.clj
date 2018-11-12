@@ -233,7 +233,7 @@
 (defn mode-into [s mode-fn & args]
   (-> s
       (update :modes conj (:mode s))
-      (assoc :mode (apply mode-fn s args)
+      (assoc :mode (apply mode-fn s args))
       set-status-line))
 
 (defn expect-return [s handler mode-fn & args]
@@ -254,11 +254,13 @@
       (update :returns conj value)
       mode-done))
 
-;; XXX multimethod for actions
-(defn act [s action]
-  (if-let [m (:move action)]
-    (update-in s [:game :entities (:entity m)] move (:to m))
-    s))
+(defmulti act (fn [s action] (:action action)))
+
+(defmethod act :move [s action]
+  (let [m (:move action)]
+    (update-in s [:game :entities (:entity m)] move (:to m))))
+
+(defmethod act :default [s action] s)
 
 (defn action-taken [mode action-kind]
   (seq (filter #(= (:action %) action-kind) (:actions mode))))
@@ -272,7 +274,7 @@
 
 (defn player-kick-action [player ball to]
   {:kind :action
-   :action :kick
+   :action :move
    :player player
    :move {:entity :ball
           :from (:tile ball)
