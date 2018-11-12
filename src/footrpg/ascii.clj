@@ -41,15 +41,6 @@
     f/down-left ".'"
     f/down-right "'."))
 
-(defn draw-vector [s from to color]
-  (let [path (f/path* from to)]
-    (reduce (fn [tile step]
-              (let [next-tile (f/add-vect tile step)]
-                (put-pitch (:pitch s) next-tile (vector-glyph step) color)
-                next-tile))
-            from
-            path)))
-
 (defn draw-border [[x y] width height]
   (s/put-string screen (dec x) (dec y) (str "." (apply str (repeat width "~")) "."))
   (doseq [y* (range height)]
@@ -65,8 +56,11 @@
                                (repeat " ")))]
     (str trimmed padding)))
 
-(defn draw-menu [s menu]
-  (let [width 25
+(defmulti render (fn [s thing] (:render thing)))
+
+(defmethod render :menu [s thing]
+  (let [menu (:menu thing)
+        width 25
         start-x 10
         start-y 5
         border? true
@@ -79,34 +73,75 @@
     (doseq [[idx line] (map-indexed vector lines)]
       (s/put-string screen start-x (+ start-y idx) line))))
 
-(defn draw-player [s player]
-  (let [color (get-in s [:game :teams (:team player) :color])
+(defmethod render :vector [s thing]
+  (let [from (:from thing)
+        to (:to thing)
+        glyph (:glyph thing)
+        color {:fg :white
+               :bg :cyan}
+        path (f/path* from to)]
+    (reduce (fn [tile step]
+              (let [next-tile (f/add-vect tile step)]
+                (put-pitch (:pitch s) next-tile (vector-glyph step) color)
+                next-tile))
+            from
+            path)
+    (put-pitch (:pitch s) to glyph color)))
+
+(defmethod render :range [s thing]
+  (let [tiles (:tiles thing)
+        color (:color thing)]
+    (doseq [tile tiles]
+      (put-pitch (:pitch s) tile "  " color))))
+
+(defmethod render :player [s thing]
+  (let [player (:player thing)
+        color (get-in s [:game :teams (:team player) :color])
         glyph (player-glyph player)]
     (put-pitch (:pitch s) (:tile player) (str glyph) color)))
 
 (defn redraw [s]
   (doseq [[i line] (map-indexed vector ascii-pitch)]
     (s/put-string screen 0 i line))
+
   (when (= (-> s :mode :name) :player-move)
-    (doseq [tile (-> s :mode :tile-range)]
-      (put-pitch (:pitch s) tile "  " {:bg :cyan :fg :cyan})))
+    (render s {:render :range
+               :tiles (-> s :mode :tile-range)
+               :color {:bg :cyan :fg :cyan}}))
+
   (when (= (-> s :mode :name) :player-kick)
-    (doseq [tile (-> s :mode :tile-range)]
-      (put-pitch (:pitch s) tile "  " {:bg :magenta :fg :magenta})))
+    (render s {:render :range
+               :tiles (-> s :mode :tile-range)
+               :color {:bg :magenta :fg :magenta}}))
+
   ;; XXX multimethod for previewing actions
   (doseq [player-move (->> (f/action-taken (:mode s) :move) (map :move))]
-    (draw-vector s (:from player-move) (:to player-move) {:bg :cyan :fg :white})
-    (put-pitch (:pitch s) (:to player-move) "[]" {:bg :cyan :fg :white}))
+    (render s {:render :vector
+               :from (:from player-move)
+               :to (:to player-move)
+               :glyph "[]"
+               :color {:bg :cyan :fg :white}}))
+
   (when-let [ball-move (:move (first (f/action-taken (:mode s) :kick)))]
-    (draw-vector s (:from ball-move) (:to ball-move) {:bg :magenta :fg :white})
-    (put-pitch (:pitch s) (:to ball-move) ball-glyph {:bg :magenta :fg :white}))
+    (render s {:render :vector
+               :from (:from ball-move)
+               :to (:to ball-move)
+               :glyph ball-glyph
+               :color {:bg :magenta :fg :white}}))
+
   (doseq [player (f/players s)]
-    (draw-player s player))
+    (render s {:render :player
+               :player player}))
+
   (let [[curs-x curs-y] (transpose-tile (:cursor s) (:pitch s))]
     (s/move-cursor screen curs-x curs-y))
+
   (when (contains? (:mode s) :menu)
-    (draw-menu s (:mode s)))
+    (render s {:render :menu
+               :menu (:mode s)}))
+
   (put-pitch (:pitch s) (-> s :game :entities :ball :tile ) ball-glyph)
+
   (s/put-string screen 0 (-> s :pitch :height inc inc) (apply str (repeat 80 " ")))
   (s/put-string screen 0 (-> s :pitch :height inc inc) (str "> " (:status-line s)))
   (s/redraw screen))
