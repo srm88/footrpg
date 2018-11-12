@@ -5,6 +5,10 @@
             [clojure.core.matrix :as matrix])
   (:gen-class))
 
+(defn make-state []
+  {:cursor [0 0]
+   :returns (list)})
+
 (defn make-game []
   {:entities {:ball nil}
    :teams {:home nil :away nil}
@@ -22,19 +26,6 @@
 (defn pitch-center [p]
   [(-> (:width p) (quot 2))
    (-> (:height p) (quot 2))])
-
-(defn pitch-top-right [p]
-  [(dec (:width p)) 0])
-
-(defn pitch-bottom-right [p]
-  [(dec (:width p))
-   (dec (:height p))])
-
-(defn pitch-top-left [p]
-  [0 0])
-
-(defn pitch-bottom-left [p]
-  [0 (dec (:height p))])
 
 (defn make-ball []
   {:kind :ball
@@ -471,67 +462,3 @@
                           :enter return-tile-input
                           :escape mode-done
                           \q mode-done})
-
-(defn make-state []
-  {:cursor [0 0]
-   :returns (list)})
-
-;; Location utils
-(def formations
-     {:433 {:gk [0. 0.5]
-            :left-back [0.34 0.15]
-            :left-cb [0.34 0.38]
-            :right-cb [0.34 0.62]
-            :right-back [0.34 0.85]
-            :left-mid [0.57 0.25]
-            :center-mid [0.57 0.5]
-            :right-mid [0.57 0.75]
-            :left-wing [0.8 0.25]
-            :striker [0.8 0.5]
-            :right-wing [0.8 0.75]}})
-
-(defn home-tile [[x y] pitch]
-  [(-> x (* (quot (:width pitch) 2)) int)
-   (-> y (* (:height pitch)) int)])
-
-(defn away-tile [[x y] pitch]
-  [(- (dec (:width pitch)) (-> x (* (quot (:width pitch) 2)) int))
-   (- (dec (:height pitch)) (-> y (* (:height pitch)) int))])
-
-(defn init-game [pitch]
-  (let [home (fn [number name* position & args] (apply assoc (make-player) :team :home
-                                                              :number number
-                                                              :name name*
-                                                              :tile (-> formations :433 position (home-tile pitch)) args))
-        away (fn [number name* position & args] (apply assoc (make-player) :team :away
-                                                              :number number
-                                                              :name name*
-                                                              :tile (-> formations :433 position (away-tile pitch)) args))]
-    (-> (make-game)
-        (assoc :entities {:ball (assoc (make-ball) :tile (pitch-center pitch))})
-        (assoc :teams {:home {:name :real-madrid :color {:bg :white :fg :black}}
-                       :away {:name :barcelona :color {:bg :red :fg :white}}})
-        (update :entities merge (->> [(home 25 "Courtois" :gk)
-                                      (home 12 "Marcelo" :left-back)
-                                      (home 4 "Ramos" :left-cb)
-                                      (home 5 "Varane" :right-cb)
-                                      (home 6 "Nacho" :right-back) ;; lol
-                                      (home 8 "Kroos" :left-mid)
-                                      (home 14 "Casemiro" :center-mid)
-                                      (home 10 "Modric" :right-mid :quick 4)
-                                      (home 22 "Isco" :left-wing :quick 4)
-                                      (home 9 "Benzema" :striker)
-                                      (home 11 "Bale" :right-wing :quick 4)
-                                      (away 1 "Ter Stegen" :gk)
-                                      (away 20 "Roberto" :right-back)
-                                      (away 3 "Pique" :right-cb)
-                                      (away 15 "Lenglet" :left-cb)
-                                      (away 18 "Alba" :left-back :quick 4)
-                                      (away 4 "Rakitic" :right-mid)
-                                      (away 5 "Busquets" :center-mid)
-                                      (away 8 "Arthur" :left-mid )
-                                      (away 12 "Rafinha" :right-wing)
-                                      (away 9 "Suarez" :striker)
-                                      (away 7 "Coutinho" :left-wing :quick 4)]
-                                     (map #(vector (:id %) %))
-                                     (into {}))))))
