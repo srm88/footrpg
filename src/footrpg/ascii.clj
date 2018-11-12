@@ -76,9 +76,9 @@
   {:bg :magenta :fg :white})
 
 (defn renderables [s]
-  (concat [(:mode s)]
-          (get-in s [:mode :actions])
-          (-> s :game :entities vals)))
+  (flatten [(f/active-modes s)
+            (map :actions (f/active-modes s))
+            (-> s :game :entities vals)]))
 
 ;; Used for render and z-index
 (defn render-kind [s thing]

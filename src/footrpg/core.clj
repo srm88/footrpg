@@ -7,17 +7,15 @@
 
 (defn make-state []
   {:cursor [0 0]
+   :kind :state
    :returns (list)})
 
 (defn make-game []
   {:entities {:ball nil}
+   :kind :game
    :teams {:home nil :away nil}
    :score {:home 0
            :away 0}})
-
-(defn make-team []
-  {:lineup []
-   :name ""})
 
 (defn make-pitch []
   {:width 58
@@ -205,11 +203,19 @@
 (declare player-turn-commit)
 (declare tile-input-mode)
 
-(defn dump-modes [s]
-  (->> (:modes s)
-       (into [(:mode s)])
+(defn modes [s]
+  (into [(:mode s)] (:modes s)))
+
+(defn dump-modes [ms]
+  (->> ms
        (map :name)
        (string/join " < ")))
+
+(defn active-modes [s]
+  (let [active (into [] (take-while #(not (:modal? %)) (modes s)))
+        terminal (first (filter :modal? (modes s)))]
+    (cond-> active
+      (some? terminal) (conj terminal))))
 
 (defn subs* [s length]
   (subs s 0 (min (count s) length)))
@@ -222,13 +228,14 @@
 
 (defn dump-state [s]
   (str "State\n"
-       "  modes: " (dump-modes s) "\n"
+       "  modes:   " (dump-modes (modes s)) "\n"
+       "  active:  " (dump-modes (active-modes s)) "\n"
        "  returns: " (str (:returns s)) "\n"
-       "  mode: " (dump-mode s)
+       "  mode:    " (dump-mode s)
        ))
 
 (defn set-status-line [s]
-  (assoc s :status-line (dump-modes s)))
+  (assoc s :status-line (dump-modes (active-modes s))))
 
 (defn mode-into [s mode-fn & args]
   (-> s
@@ -298,6 +305,7 @@
 (declare menu-mode-handlers)
 (defn menu-mode [s mode-name menu-opts]
   {:name mode-name
+   :kind :mode
    :cursor 0
    ;; how can we return from a menu?
    ;; list of {:text, :fn}
@@ -313,6 +321,7 @@
 (declare forever-mode-handlers)
 (defn forever-mode [s]
   {:name "turn 0"
+   :kind :mode
    :turn 0
    :team :home
    :handlers forever-mode-handlers})
@@ -333,6 +342,8 @@
 (declare turn-mode-handlers)
 (defn turn-mode [s team-id]
   {:name :turn-mode
+   :kind :mode
+   :modal? true
    :team team-id
    :handlers turn-mode-handlers
    :actions-by-player {}
@@ -388,6 +399,7 @@
 (declare player-select-mode-handlers)
 (defn player-select-mode [s player]
   {:name :player-select
+   :kind :mode
    :handlers player-select-mode-handlers
    :player player
    :ball (get-in s [:game :entities :ball])
@@ -443,6 +455,7 @@
 (declare tile-input-handlers)
 (defn tile-input-mode [s mode-name tile-range]
   {:name mode-name
+   :kind :mode
    :tile-range tile-range
    :handlers tile-input-handlers})
 
