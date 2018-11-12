@@ -37,6 +37,17 @@
     f/down-left ".'"
     f/down-right "'."))
 
+(defn momentum-glyph [v]
+  (condp = v
+    f/up "^ "
+    f/down "v "
+    f/left "< "
+    f/right "> "
+    f/up-left "< "
+    f/up-right "> "
+    f/down-left "< "
+    f/down-right "> "))
+
 (defn draw-border [[x y] width height]
   (s/put-string screen (dec x) (dec y) (str "." (apply str (repeat width "~")) "."))
   (doseq [y* (range height)]
@@ -85,6 +96,7 @@
   (cond
     (contains? thing :tile-range) :range
     (contains? thing :menu) :menu
+    (= (:name thing) :momentums) :momentums
     (= (:kind thing) :player) :simple-entity
     (= (:kind thing) :ball) :simple-entity
     (and (= (:kind thing) :action)
@@ -92,11 +104,12 @@
     :else (:render thing)))
 
 (defmulti z-index render-kind)
-(defmethod z-index :range [s mode] 1)
-(defmethod z-index :menu [s mode] 100)
-(defmethod z-index :simple-entity [s entity] (if (= (:kind entity) :ball) 10 5))
-(defmethod z-index :move [s mode] 2)
-(defmethod z-index :default [s _] 0)
+(defmethod z-index :range [_ _] 1)
+(defmethod z-index :menu [_ _] 100)
+(defmethod z-index :simple-entity [_ entity] (if (= (:kind entity) :ball) 10 5))
+(defmethod z-index :move [_ _] 2)
+(defmethod z-index :momentums [_ _] 3)
+(defmethod z-index :default [_ _] 0)
 
 (defmulti render render-kind)
 
@@ -115,19 +128,28 @@
     (doseq [[idx line] (map-indexed vector lines)]
       (s/put-string screen start-x (+ start-y idx) line))))
 
+(defn draw-vect [s from to glyph-fn color]
+  (reduce (fn [tile step]
+            (let [next-tile (f/add-vect tile step)]
+              (put-pitch (:pitch s) next-tile (glyph-fn step) color)
+              next-tile))
+          from
+          (f/path* from to)))
+
 (defmethod render :move [s action]
   (let [m (:move action)
         entity (get-in s [:game :entities (:entity m)])
         glyph (glyph s entity)
-        color (color s entity)
-        path (f/path* (:from m) (:to m))]
-    (reduce (fn [tile step]
-              (let [next-tile (f/add-vect tile step)]
-                (put-pitch (:pitch s) next-tile (vector-glyph step) color)
-                next-tile))
-            (:from m)
-            path)
+        color (color s entity)]
+    (draw-vect s (:from m) (:to m) vector-glyph color)
     (put-pitch (:pitch s) (:to m) glyph color)))
+
+(defmethod render :momentums [s mode]
+  (doseq [entity (:entities mode)]
+    (let [from (:tile entity)
+          to (f/add-vect from (:vect entity))
+          color (color s entity)]
+      (draw-vect s from to momentum-glyph color))))
 
 (defmethod render :range [s mode]
   (let [tiles (:tile-range mode)

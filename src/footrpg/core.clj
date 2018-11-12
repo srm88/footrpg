@@ -18,6 +18,7 @@
            :away 0}})
 
 (defn make-pitch []
+  ;; This is roughly the size in yards, divided by 2, of Wembley in london
   {:width 58
    :height 37})
 
@@ -196,12 +197,13 @@
 (declare menu-mode)
 (declare forever-mode)
 (declare turn-mode)
-(declare tile-info-menu)
+(declare ->tile-info-menu)
 (declare player-select-mode)
 (declare maybe-player-move-mode)
 (declare maybe-player-kick-mode)
 (declare player-turn-commit)
 (declare tile-input-mode)
+(declare ->momentums-mode)
 
 (defn modes [s]
   (into [(:mode s)] (:modes s)))
@@ -337,6 +339,7 @@
 
 (def forever-mode-handlers {:enter next-turn
                             :escape game-done
+                            \v ->momentums-mode
                             \q game-done})
 
 (declare turn-mode-handlers)
@@ -349,22 +352,32 @@
    :actions-by-player {}
    :actions []})
 
-(defn player-info-menu [s player]
+(defn ->player-info-menu [s player]
   (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
                                                  (str "Acc " (:quick player))]
                                                 (map #(hash-map :text %)))))
 
-(defn players-info-menu [s]
+(defn ->players-info-menu [s]
   (mode-into s menu-mode :players-info-menu
              (->> (players s)
                   (map #(hash-map :text (str (:name %) " #" (:number %))
-                                  :fn (fn [s*] (player-info-menu s* %)))))))
+                                  :fn (fn [s*] (->player-info-menu s* %)))))))
 
 ;; XXX multimethod for tile-info
-(defn tile-info-menu [s]
+(defn ->tile-info-menu [s]
   (when-let [player (at-tile s (:cursor s))]
-    (player-info-menu s player)))
+    (->player-info-menu s player)))
 
+;; XXX player-info-mode should show momentums
+(declare ephemeral-pitch-mode-handlers)
+(defn momentums-mode [s]
+  {:kind :mode
+   :name :momentums
+   :entities (into [] (filter :vect (-> s :game :entities vals)))
+   :handlers ephemeral-pitch-mode-handlers})
+
+(defn ->momentums-mode [s]
+  (mode-into s momentums-mode))
 
 (defn return-actions [s]
   ;; XXX confirmation menu
@@ -393,7 +406,7 @@
                                                      :actions (flatten (vals actions-by-player))})))
                          player-select-mode player)
           (move-player player))
-      (tile-info-menu s))
+      (->tile-info-menu s))
     nil))
 
 (declare player-select-mode-handlers)
@@ -429,10 +442,11 @@
                          :right pitch-cursor-right
                          :up pitch-cursor-up
                          :down pitch-cursor-down
-                         \i tile-info-menu
-                         \p players-info-menu
+                         \i ->tile-info-menu
+                         \p ->players-info-menu
                          :enter control-player
                          \g (fn [s] (-> s commit-actions next-turn))
+                         \v ->momentums-mode
                          :escape mode-done
                          \q mode-done})
 
@@ -441,8 +455,9 @@
                                   :up pitch-cursor-up
                                   :down pitch-cursor-down
                                   \k maybe-player-kick-mode
-                                  \i #(player-info-menu % (get-in % [:mode :player]))
+                                  \i #(->player-info-menu % (get-in % [:mode :player]))
                                   \m maybe-player-move-mode
+                                  \v ->momentums-mode
                                   :enter return-actions
                                   :escape mode-done
                                   \q mode-done})
@@ -459,10 +474,19 @@
    :tile-range tile-range
    :handlers tile-input-handlers})
 
+(def ephemeral-pitch-mode-handlers {:left pitch-cursor-left
+                                    :right pitch-cursor-right
+                                    :up pitch-cursor-up
+                                    :down pitch-cursor-down
+                                    :enter mode-done
+                                    :escape mode-done
+                                    \q mode-done})
+
 (def tile-input-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
                           :up pitch-cursor-up
                           :down pitch-cursor-down
                           :enter return-tile-input
+                          \v ->momentums-mode
                           :escape mode-done
                           \q mode-done})
