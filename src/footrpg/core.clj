@@ -209,6 +209,7 @@
 (def game-done (constantly :game-done))
 
 (declare menu-mode)
+(declare forever-mode)
 (declare turn-mode)
 (declare tile-info-menu)
 (declare player-select-mode)
@@ -327,6 +328,26 @@
                          :escape mode-done
                          \q mode-done})
 
+(declare forever-mode-handlers)
+(defn forever-mode [s]
+  {:name "turn 0"
+   :turn 0
+   :team :home
+   :handlers forever-mode-handlers})
+
+(defn next-turn [s]
+  (let [turn* (-> s :mode :turn inc)
+        team* (if (= :home (get-in s [:mode :team])) :away :home)]
+    (-> s
+        (update :mode merge {:name (str "turn " turn*)
+                             :turn turn*
+                             :team team*})
+        (mode-into turn-mode team*))))
+
+(def forever-mode-handlers {:enter next-turn
+                            :escape game-done
+                            \q game-done})
+
 (declare turn-mode-handlers)
 (defn turn-mode [s team-id]
   {:name :turn-mode
@@ -416,7 +437,7 @@
                          \i tile-info-menu
                          \p players-info-menu
                          :enter control-player
-                         \g commit-actions
+                         \g (fn [s] (-> s commit-actions next-turn))
                          :escape game-done
                          \q game-done})
 

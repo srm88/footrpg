@@ -13,7 +13,9 @@
               (assoc :modes (list))
               (assoc :game (f/init-game pitch))
               (assoc :cursor (f/pitch-center pitch)))]
-    (def state (assoc s :mode (f/turn-mode s :home)))))
+    (def state (-> s
+                   (assoc :mode (f/forever-mode s))
+                   (f/mode-into f/turn-mode :home)))))
 
 (defn dispatcher [s input]
   (let [handlers (get-in s [:mode :handlers])
