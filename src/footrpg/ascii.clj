@@ -86,9 +86,13 @@
 (defmethod color :ball [s ball]
   {:bg :magenta :fg :white})
 
+(defn mode-actions [m]
+  (or (:actions m)
+      (-> m :actions-by-player vals flatten)))
+
 (defn renderables [s]
   (flatten [(f/active-modes s)
-            (map :actions (f/active-modes s))
+            (map mode-actions (f/active-modes s))
             (-> s :game :entities vals)]))
 
 ;; Used for render and z-index

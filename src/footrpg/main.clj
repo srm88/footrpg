@@ -75,7 +75,7 @@
               (assoc :cursor (f/pitch-center pitch)))]
     (def state (-> s
                    (assoc :mode (f/forever-mode s))
-                   (f/mode-into f/turn-mode :home)))))
+                   f/next-round))))
 
 (defn dispatcher [s input]
   (let [handlers (get-in s [:mode :handlers])
@@ -96,7 +96,6 @@
     (let [[input s*] (get-input s)
           s** (or (dispatcher s* input) s*)]
       (when-not (= s** :game-done)
-        (debug-log (f/dump-state s**))
         (recur s**)))))
 
 (defn main []

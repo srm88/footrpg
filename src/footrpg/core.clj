@@ -28,6 +28,7 @@
 
 (defn make-ball []
   {:kind :ball
+   :id :ball
    :vect nil
    :tile []})
 
@@ -40,6 +41,9 @@
    :quick 3
    :vect nil
    :tile []})
+
+(defn other-team [t]
+  (if (= t :home) :away :home))
 
 (def up [0 -1])
 (def down [0 1])
@@ -197,6 +201,7 @@
 (declare menu-mode)
 (declare forever-mode)
 (declare turn-mode)
+(declare round-mode)
 (declare ->tile-info-menu)
 (declare player-select-mode)
 (declare maybe-player-move-mode)
@@ -226,7 +231,7 @@
   (let [m (:mode s)
         mode-name (:name m)]
     (str mode-name "\n  " (string/join "\n  " (for [[k v] (dissoc m :name :handlers)]
-                                                (str k ": " (subs* (str v) 20)))))))
+                                                (str k ": " (subs* (str v) 80)))))))
 
 (defn dump-state [s]
   (str "State\n"
@@ -274,20 +279,22 @@
 (defn action-taken [mode action-kind]
   (seq (filter #(= (:action %) action-kind) (:actions mode))))
 
+(defn make-move [entity to]
+  {:entity (:id entity)
+   :from (:tile entity)
+   :to to
+   :vect (subtract-vect to (:tile entity))})
+
 (defn player-move-action [player to]
   {:kind :action
    :action :move
-   :move {:entity (:id player)
-          :from (:tile player)
-          :to to}})
+   :move (make-move player to)})
 
 (defn player-kick-action [player ball to]
   {:kind :action
    :action :move
    :player player
-   :move {:entity :ball
-          :from (:tile ball)
-          :to to}})
+   :move (make-move ball to)})
 
 (defn menu-cursor-up [s]
   (-> s
@@ -322,35 +329,36 @@
 
 (declare forever-mode-handlers)
 (defn forever-mode [s]
-  {:name "turn 0"
+  {:name "round 0"
    :kind :mode
-   :turn 0
-   :team :home
+   :round 0
    :handlers forever-mode-handlers})
 
-(defn next-turn [s]
-  (let [turn* (-> s :mode :turn inc)
-        team* (if (= :home (get-in s [:mode :team])) :away :home)]
-    (-> s
-        (update :mode merge {:name (str "turn " turn*)
-                             :turn turn*
-                             :team team*})
-        (mode-into turn-mode team*))))
-
-(def forever-mode-handlers {:enter next-turn
-                            :escape game-done
+(def forever-mode-handlers {:escape game-done
                             \v ->momentums-mode
                             \q game-done})
 
-(declare turn-mode-handlers)
-(defn turn-mode [s team-id]
-  {:name :turn-mode
+(declare start-turn)
+(def round-mode-handlers {:enter start-turn
+                          \v ->momentums-mode
+                          :escape game-done
+                          \q game-done})
+
+(defn round-mode [s]
+  {:name :round-mode
    :kind :mode
    :modal? true
+   :handlers round-mode-handlers
+   :complete #{}
+   :actions-by-player {}})
+
+(declare turn-mode-handlers)
+(defn turn-mode [s team-id]
+  {:name (str (get-in s [:game :teams team-id :name]) " turn")
+   :kind :mode
    :team team-id
    :handlers turn-mode-handlers
-   :actions-by-player {}
-   :actions []})
+   :actions-by-player {}})
 
 (defn ->player-info-menu [s player]
   (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
@@ -379,15 +387,25 @@
 (defn ->momentums-mode [s]
   (mode-into s momentums-mode))
 
-(defn return-actions [s]
-  ;; XXX confirmation menu
+(defn commit-player [s]
   (return s (get-in s [:mode :actions])))
 
-(defn commit-actions [s]
-  ;; Generic 'apply list of actions'
-  (mode-done (if-let [actions (seq (get-in s [:mode :actions]))]
-               (reduce act s actions)
-               s)))
+(def ticks-per-turn 20)
+
+;(defmulti tick (fn [s thing] (:kind (get-in s [:game :entities (:id thing)]))))
+
+;(defmethod tick :ball [s ball*]
+  ;(let [ball (get-in s [:game :entities (:id ball*)])]
+        ;vect* (]
+
+
+;(defn run-tick [s]
+  ;; Update players before ball
+  ;(let [new-s (reduce tick s (players s))]
+    ;(tick new-s (get-in new-s [:game :entities :ball]))))
+
+;(defn run-turn [s]
+  ;(apply (apply comp (repeat ticks-per-turn run-tick)) s))
 
 (defn move-player [s player]
   (expect-return s (fn [s* tile]
@@ -396,14 +414,13 @@
                          (update-in [:mode :actions] conj (player-move-action player tile))))
                  tile-input-mode :player-move (player-range player (:pitch s))))
 
+
 (defn control-player [s]
   (if-let [player (at-tile s (:cursor s))]
     (if (= (:team player) (get-in s [:mode :team]))
       (-> s
           (expect-return (fn [s* actions]
-                           (let [actions-by-player (assoc (get-in s* [:mode :actions-by-player]) (:id player) actions)]
-                             (update s* :mode merge {:actions-by-player actions-by-player
-                                                     :actions (flatten (vals actions-by-player))})))
+                           (assoc-in s* [:mode :actions-by-player (:id player)] actions))
                          player-select-mode player)
           (move-player player))
       (->tile-info-menu s))
@@ -438,6 +455,50 @@
                              (update-in [:mode :actions] conj (player-kick-action player ball tile))))
                      tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
 
+(defn first-team-in-round [s]
+  :home)
+
+(declare accept-turn-actions)
+(defn start-turn
+  ([s] (start-turn s (first-team-in-round s)))
+  ([s team-id]
+   (-> s
+       (expect-return (partial accept-turn-actions team-id)
+                      turn-mode team-id))))
+
+(defn finish-round [s]
+  (-> (if-let [actions (-> s :mode :actions-by-player vals flatten seq)]
+        (reduce act s actions)
+        s)
+      mode-done))
+
+(defn next-round [s]
+  (let [round* (-> s :mode :round inc)]
+    (-> s
+        (update :mode merge {:name (str "round " round*)
+                             :round round*})
+        (mode-into round-mode)
+        start-turn)))
+
+(defn commit-turn [s]
+  (return s (get-in s [:mode :actions-by-player])))
+
+(defn accept-turn-actions [team-id s actions-by-player]
+  ;; Run the next team's turn, or finish the round
+  ;; We can't mode-done, handle a return, then do something else within a single
+  ;; function, because the return handler is only invoked between iterations of
+  ;; the main loop. So within a single iteration its like we can only run one
+  ;; expression -- there's no `do`.
+  ;; Work around this for now by abusing the return handler to jump straight to
+  ;; a new mode.
+  (let [round-complete? (seq (get-in s [:mode :complete]))
+        s* (-> s
+               (update-in [:mode :actions-by-player] merge actions-by-player)
+               (update-in [:mode :complete] conj team-id))]
+    (if round-complete?
+      (-> s* finish-round next-round)
+      (start-turn s* (other-team team-id)))))
+
 (def turn-mode-handlers {:left pitch-cursor-left
                          :right pitch-cursor-right
                          :up pitch-cursor-up
@@ -445,7 +506,7 @@
                          \i ->tile-info-menu
                          \p ->players-info-menu
                          :enter control-player
-                         \g (fn [s] (-> s commit-actions next-turn))
+                         \g commit-turn
                          \v ->momentums-mode
                          :escape mode-done
                          \q mode-done})
@@ -458,7 +519,7 @@
                                   \i #(->player-info-menu % (get-in % [:mode :player]))
                                   \m maybe-player-move-mode
                                   \v ->momentums-mode
-                                  :enter return-actions
+                                  :enter commit-player
                                   :escape mode-done
                                   \q mode-done})
 
