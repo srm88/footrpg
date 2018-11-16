@@ -9,6 +9,7 @@
   * ball bounces off static players
   * movement depends on time -- faster moving objects
 * multi-turn actions
+* main loop supports 'do' form to chain expressions
 
 # Scratch
 
