@@ -1,6 +1,7 @@
 (ns footrpg.ascii
   (:require [footrpg.core :as f]
-            [footrpg.util :refer [debug-log]]
+            [footrpg.util :refer [debug-log subs*]]
+            [footrpg.mode :refer [active-modes]]
             [lanterna.screen :as s]
             [clojure.string :as string]))
 
@@ -57,7 +58,7 @@
 
 (defn r-pad-to [s length]
   ;; New string will be padded on the right with spaces until it has length `length`
-  (let [trimmed (f/subs* s length)
+  (let [trimmed (subs* s length)
         padding (apply str (-> (dec length)
                                (- (count trimmed))
                                (repeat " ")))]
@@ -87,8 +88,8 @@
   {:bg :magenta :fg :white})
 
 (defn renderables [s]
-  (flatten [(f/active-modes s)
-            (map :actions (f/active-modes s))
+  (flatten [(active-modes s)
+            (map :actions (active-modes s))
             (-> s :game :entities vals)]))
 
 ;; Used for render and z-index

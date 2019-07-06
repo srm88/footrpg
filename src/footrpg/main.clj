@@ -1,6 +1,7 @@
 (ns footrpg.main
   (:require [footrpg.ascii :as ascii]
             [footrpg.util :refer [debug-log]]
+            [footrpg.mode :refer [set-status-line]]
             [footrpg.core :as f])
   (:gen-class))
 
@@ -75,29 +76,37 @@
               (assoc :cursor (f/pitch-center pitch)))]
     (def state (-> s
                    (assoc :mode (f/forever-mode s))
-                   (f/mode-into f/turn-mode :home)))))
+                   (f/next-turn)))))
 
-(defn dispatcher [s input]
-  (let [handlers (get-in s [:mode :handlers])
-        return-handler (get-in s [:mode :return-handler])]
-    (cond
-      (= :key (:kind input)) (when-let [f (get handlers (:value input))] (f s))
-      (and (= :return (:kind input))
-           (some? return-handler)) (return-handler (assoc-in s [:mode :return-handler] nil) (:value input)))))
+(defn handle-input [s input]
+  (or (when-let [handler (get-in s [:mode :handlers input])]
+        (debug-log "found handler for " input ": " handler)
+        (handler s))
+      s))
 
-(defn get-input [s]
-  (if (seq (:returns s))
-    [{:kind :return :value (-> s :returns peek)} (update s :returns pop)]
-    [{:kind :key :value (ascii/input)} s]))
+(defn set-modes [s modes]
+  (assoc s :mode (first modes) :modes (rest modes)))
+
+(defn reap-modes [s]
+  (->> (conj (:modes s) (:mode s))
+       (remove nil?)
+       (remove :done)
+       (set-modes s)))
+
+(defn game-done? [s]
+  (or (:game-done (:mode s)) (some :game-done (:modes s))))
 
 (defn main-loop []
   (loop [s state]
     (ascii/redraw s)
-    (let [[input s*] (get-input s)
-          s** (or (dispatcher s* input) s*)]
-      (when-not (= s** :game-done)
-        (debug-log (f/dump-state s**))
-        (recur s**)))))
+    (let [input (ascii/input)]
+      (let [s* (-> s
+                   (handle-input input)
+                   (reap-modes)
+                   (set-status-line))]
+        (when-not (game-done? s*)
+          (debug-log (f/dump-state s*))
+          (recur s*))))))
 
 (defn main []
   (ascii/init)

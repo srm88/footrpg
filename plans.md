@@ -26,3 +26,5 @@ players can't run through players
 ball moving on its own
 goals
 out of bounds
+
+https://ideolalia.com/creating-a-simple-game-in-clojure

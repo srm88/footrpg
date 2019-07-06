@@ -1,5 +1,6 @@
 (ns footrpg.core
   (:require [footrpg.util :refer [debug-log]]
+            [footrpg.mode :as m]
             [clojure.string :as string]
             [clojure.core.matrix.linear :as linear]
             [clojure.core.matrix :as matrix])
@@ -7,8 +8,7 @@
 
 (defn make-state []
   {:cursor [0 0]
-   :kind :state
-   :returns (list)})
+   :kind :state})
 
 (defn make-game []
   {:entities {:ball nil}
@@ -192,7 +192,8 @@
       (update-in [:cursor 1] inc)
       (update :cursor bounded (:pitch s))))
 
-(def game-done (constantly :game-done))
+(defn game-done [s]
+  (assoc-in s [:mode :game-done] true))
 
 (declare menu-mode)
 (declare forever-mode)
@@ -205,63 +206,12 @@
 (declare tile-input-mode)
 (declare ->momentums-mode)
 
-(defn modes [s]
-  (into [(:mode s)] (:modes s)))
-
-(defn dump-modes [ms]
-  (->> ms
-       (map :name)
-       (string/join " < ")))
-
-(defn active-modes [s]
-  (let [active (into [] (take-while #(not (:modal? %)) (modes s)))
-        terminal (first (filter :modal? (modes s)))]
-    (cond-> active
-      (some? terminal) (conj terminal))))
-
-(defn subs* [s length]
-  (subs s 0 (min (count s) length)))
-
-(defn dump-mode [s]
-  (let [m (:mode s)
-        mode-name (:name m)]
-    (str mode-name "\n  " (string/join "\n  " (for [[k v] (dissoc m :name :handlers)]
-                                                (str k ": " (subs* (str v) 20)))))))
-
 (defn dump-state [s]
   (str "State\n"
-       "  modes:   " (dump-modes (modes s)) "\n"
-       "  active:  " (dump-modes (active-modes s)) "\n"
-       "  returns: " (str (:returns s)) "\n"
-       "  mode:    " (dump-mode s)
+       "  modes:   " (m/dump-modes (m/modes s)) "\n"
+       "  active:  " (m/dump-modes (m/active-modes s)) "\n"
+       "  mode:    " (m/dump-mode s)
        ))
-
-(defn set-status-line [s]
-  (assoc s :status-line (dump-modes (active-modes s))))
-
-(defn mode-into [s mode-fn & args]
-  (-> s
-      (update :modes conj (:mode s))
-      (assoc :mode (apply mode-fn s args))
-      set-status-line))
-
-(defn expect-return [s handler mode-fn & args]
-  (apply mode-into (assoc-in s [:mode :return-handler] handler)
-                   mode-fn args))
-
-(defn mode-done [s]
-  (if-let [previous (-> s :modes peek)]
-    (-> s
-        (assoc :mode (cond-> previous
-                       (empty? (:returns s)) (assoc :return-handler nil)))
-        (update :modes pop)
-        set-status-line)
-    :game-done))
-
-(defn return [s value]
-  (-> s
-      (update :returns conj value)
-      mode-done))
 
 (defmulti act (fn [s action] (:action action)))
 
@@ -317,15 +267,15 @@
 (def menu-mode-handlers {:down menu-cursor-down
                          :up menu-cursor-up
                          :enter menu-select
-                         :escape mode-done
-                         \q mode-done})
+                         :escape m/mode-done
+                         \q m/mode-done})
 
 (declare forever-mode-handlers)
 (defn forever-mode [s]
   {:name "turn 0"
    :kind :mode
    :turn 0
-   :team :home
+   :team :away
    :handlers forever-mode-handlers})
 
 (defn next-turn [s]
@@ -335,7 +285,9 @@
         (update :mode merge {:name (str "turn " turn*)
                              :turn turn*
                              :team team*})
-        (mode-into turn-mode team*))))
+        (m/expect-return (fn [s* actions]
+                           (next-turn (reduce act s* actions)))
+                         turn-mode team*))))
 
 (def forever-mode-handlers {:enter next-turn
                             :escape game-done
@@ -353,15 +305,15 @@
    :actions []})
 
 (defn ->player-info-menu [s player]
-  (mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
-                                                 (str "Acc " (:quick player))]
-                                                (map #(hash-map :text %)))))
+  (m/mode-into s menu-mode :player-info-menu (->> [(str (:name player) " #" (:number player))
+                                                   (str "Acc " (:quick player))]
+                                                  (map #(hash-map :text %)))))
 
 (defn ->players-info-menu [s]
-  (mode-into s menu-mode :players-info-menu
-             (->> (players s)
-                  (map #(hash-map :text (str (:name %) " #" (:number %))
-                                  :fn (fn [s*] (->player-info-menu s* %)))))))
+  (m/mode-into s menu-mode :players-info-menu
+               (->> (players s)
+                    (map #(hash-map :text (str (:name %) " #" (:number %))
+                                    :fn (fn [s*] (->player-info-menu s* %)))))))
 
 ;; XXX multimethod for tile-info
 (defn ->tile-info-menu [s]
@@ -377,34 +329,28 @@
    :handlers ephemeral-pitch-mode-handlers})
 
 (defn ->momentums-mode [s]
-  (mode-into s momentums-mode))
+  (m/mode-into s momentums-mode))
 
 (defn return-actions [s]
   ;; XXX confirmation menu
-  (return s (get-in s [:mode :actions])))
-
-(defn commit-actions [s]
-  ;; Generic 'apply list of actions'
-  (mode-done (if-let [actions (seq (get-in s [:mode :actions]))]
-               (reduce act s actions)
-               s)))
+  (m/return s (get-in s [:mode :actions])))
 
 (defn move-player [s player]
-  (expect-return s (fn [s* tile]
-                     (-> s*
-                         (update-in [:mode :player] move tile)
-                         (update-in [:mode :actions] conj (player-move-action player tile))))
-                 tile-input-mode :player-move (player-range player (:pitch s))))
+  (m/expect-return s (fn [s* tile]
+                       (-> s*
+                           (update-in [:mode :player] move tile)
+                           (update-in [:mode :actions] conj (player-move-action player tile))))
+                   tile-input-mode :player-move (player-range player (:pitch s))))
 
 (defn control-player [s]
   (if-let [player (at-tile s (:cursor s))]
     (if (= (:team player) (get-in s [:mode :team]))
       (-> s
-          (expect-return (fn [s* actions]
-                           (let [actions-by-player (assoc (get-in s* [:mode :actions-by-player]) (:id player) actions)]
-                             (update s* :mode merge {:actions-by-player actions-by-player
-                                                     :actions (flatten (vals actions-by-player))})))
-                         player-select-mode player)
+          (m/expect-return (fn [s* actions]
+                             (let [actions-by-player (assoc (get-in s* [:mode :actions-by-player]) (:id player) actions)]
+                               (update s* :mode merge {:actions-by-player actions-by-player
+                                                       :actions (flatten (vals actions-by-player))})))
+                           player-select-mode player)
           (move-player player))
       (->tile-info-menu s))
     nil))
@@ -432,11 +378,11 @@
                    magnitude
                    (< 2))
                (not (action-taken (:mode s) :kick)))
-      (expect-return s (fn [s* tile]
-                         (-> s*
-                             (update-in [:mode :ball] move tile)
-                             (update-in [:mode :actions] conj (player-kick-action player ball tile))))
-                     tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
+      (m/expect-return s (fn [s* tile]
+                           (-> s*
+                               (update-in [:mode :ball] move tile)
+                               (update-in [:mode :actions] conj (player-kick-action player ball tile))))
+                       tile-input-mode :player-kick (player-kick-range player ball (:pitch s))))))
 
 (def turn-mode-handlers {:left pitch-cursor-left
                          :right pitch-cursor-right
@@ -445,10 +391,10 @@
                          \i ->tile-info-menu
                          \p ->players-info-menu
                          :enter control-player
-                         \g (fn [s] (-> s commit-actions next-turn))
+                         \g return-actions
                          \v ->momentums-mode
-                         :escape mode-done
-                         \q mode-done})
+                         :escape m/mode-done
+                         \q m/mode-done})
 
 (def player-select-mode-handlers {:left pitch-cursor-left
                                   :right pitch-cursor-right
@@ -459,13 +405,13 @@
                                   \m maybe-player-move-mode
                                   \v ->momentums-mode
                                   :enter return-actions
-                                  :escape mode-done
-                                  \q mode-done})
+                                  :escape m/mode-done
+                                  \q m/mode-done})
 
 (defn return-tile-input [s]
   (let [tile (:cursor s)]
     (when (contains? (-> s :mode :tile-range) tile)
-      (return s tile))))
+      (m/return s tile))))
 
 (declare tile-input-handlers)
 (defn tile-input-mode [s mode-name tile-range]
@@ -478,9 +424,9 @@
                                     :right pitch-cursor-right
                                     :up pitch-cursor-up
                                     :down pitch-cursor-down
-                                    :enter mode-done
-                                    :escape mode-done
-                                    \q mode-done})
+                                    :enter m/mode-done
+                                    :escape m/mode-done
+                                    \q m/mode-done})
 
 (def tile-input-handlers {:left pitch-cursor-left
                           :right pitch-cursor-right
@@ -488,5 +434,5 @@
                           :down pitch-cursor-down
                           :enter return-tile-input
                           \v ->momentums-mode
-                          :escape mode-done
-                          \q mode-done})
+                          :escape m/mode-done
+                          \q m/mode-done})
