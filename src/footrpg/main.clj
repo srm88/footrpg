@@ -79,8 +79,7 @@
                    (f/next-turn)))))
 
 (defn handle-input [s input]
-  (or (when-let [handler (get-in s [:mode :handlers input])]
-        (debug-log "found handler for " input ": " handler)
+  (or (when-let [handler (when input (get-in s [:mode :handlers input]))]
         (handler s))
       s))
 

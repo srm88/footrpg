@@ -183,7 +183,7 @@
   (s/redraw screen))
 
 (defn input []
-  (s/get-key-blocking screen))
+  (s/get-key screen))
 
 (defn stop []
   (s/stop screen))
