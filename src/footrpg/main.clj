@@ -7,6 +7,11 @@
 
 (def state (f/make-state))
 
+(defn debug-state [s & msg]
+  (when msg (debug-log (apply str "==========" msg)))
+  (debug-log (f/dump-state s))
+  s)
+
 ;; Location utils
 (def formations
      {:433 {:gk [0. 0.5]
@@ -95,23 +100,61 @@
 (defn game-done? [s]
   (or (:game-done (:mode s)) (some :game-done (:modes s))))
 
-(defn main-loop []
-  (loop [s state]
-    (ascii/redraw s)
-    (let [input (ascii/input)]
-      (let [s* (-> s
-                   (handle-input input)
-                   (reap-modes)
-                   (set-status-line))]
-        (when-not (game-done? s*)
-          (debug-log (f/dump-state s*))
-          (recur s*))))))
+(defn update-entities [s]
+  s)
+
+(defn update-entities-n-times [s n]
+  (reduce (fn [s* _] (update-entities s*)) s (range n)))
+
+(defn process-input [s]
+  (-> s
+      (handle-input (ascii/input))
+      reap-modes
+      set-status-line)) ; XXX This should be part of render
+
+(defn constant-update-and-frame-rate-main-loop [updates-per-sec]
+  (let [ms-per-update (/ 1000 updates-per-sec)]
+    (loop [s state
+           sleep 0]
+      (when (> sleep 0)
+        (Thread/sleep sleep))
+      (let [start (System/currentTimeMillis)]
+        (when-not (game-done? s)
+          (-> s
+              process-input
+              update-entities
+              (doto ascii/redraw)
+              (recur (-> ms-per-update
+                         (- (System/currentTimeMillis))
+                         (+ start)))))))))
+
+; For posterity -- this is almost certainly excessive for our game
+; https://gameprogrammingpatterns.com/game-loop.html
+(defn constant-update-variable-frame-rate-main-loop [updates-per-sec]
+  (let [ms-per-update (/ 1000 updates-per-sec)]
+    (loop [s state
+           start (System/currentTimeMillis)
+           lag 0]
+      (let [now (System/currentTimeMillis)
+            elapsed (- now start)
+            start* now
+            lag* (+ lag elapsed)
+            steps (inc (quot lag ms-per-update))
+            lag* (- lag (* steps ms-per-update))]
+        (when-not (game-done? s)
+          (-> s
+              process-input
+              ;(debug-state "after process input")
+              (update-entities-n-times steps)
+              ;(debug-state "after update")
+              (doto ascii/redraw)
+              (recur start* lag*)))))))
 
 (defn main []
   (ascii/init)
   (try
     (init)
-    (main-loop)
+    (constant-update-and-frame-rate-main-loop 24)
     (finally (ascii/stop))))
 
 (defn -main [& args]
